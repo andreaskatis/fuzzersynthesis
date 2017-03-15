@@ -1,0 +1,18 @@
+(declare-fun $desiredSpeed$2 () Real)
+(declare-fun $carSpeed$0 () Real)
+(declare-fun $desiredSpeed$~1 () Real)
+(declare-fun $OK$2 () Bool)
+(declare-fun %init () Bool)
+
+(assert (let ((a!1 (= $desiredSpeed$~1
+              (ite %init (to_real (div 0 10)) $desiredSpeed$~1))))
+(let ((a!2 (or (= $desiredSpeed$~1 (to_real (div 0 10)))
+               (= $desiredSpeed$~1 $carSpeed$0)
+               a!1)))
+  (ite (or (and %init (= $desiredSpeed$~1 0.0))
+           (not %init)
+           (= $desiredSpeed$~1 $carSpeed$0)
+           (= $desiredSpeed$~1 0.0))
+       (and (= $OK$2 a!2) (= $desiredSpeed$2 $desiredSpeed$~1))
+       (and (= $OK$2 true) (= $desiredSpeed$2 $carSpeed$0))))))
+(check-sat)
