@@ -1,0 +1,46 @@
+(declare-fun $V83_X$2 () Bool)
+(declare-fun $V29_dirty_s$2 () Int)
+(declare-fun $V27_invalid_s$2 () Int)
+(declare-fun $V31_env$2 () Bool)
+(declare-fun $V31_env$~1 () Bool)
+(declare-fun $V29_dirty_s$~1 () Int)
+(declare-fun $V27_invalid_s$~1 () Int)
+(declare-fun %init () Bool)
+(declare-fun $V28_valid_s$~1 () Int)
+(declare-fun $OK$2 () Bool)
+(declare-fun $e_s3$0 () Bool)
+(declare-fun $e_s1$0 () Bool)
+(declare-fun $V28_valid_s$2 () Int)
+(declare-fun $init_invalid_s$0 () Int)
+(declare-fun $e_s2$0 () Bool)
+
+(assert (let ((a!1 (and (not (or (and $e_s1$0 $e_s2$0 $e_s1$0 $e_s3$0)
+                         (and $e_s2$0 $e_s3$0)))
+                (>= $init_invalid_s$0 0)))
+      (a!2 (+ $V27_invalid_s$~1
+              $V28_valid_s$~1
+              $V29_dirty_s$~1
+              (* (- 1) 0)
+              (* (- 1) 0))))
+(let ((a!3 (or (not (ite %init a!1 (or a!1 $V31_env$~1)))
+               (ite %init
+                    true
+                    (= (+ a!2 0 0)
+                       (+ $V27_invalid_s$~1 $V28_valid_s$~1 $V29_dirty_s$~1))))))
+(let ((a!4 (and (= $OK$2 a!3)
+                (= $V31_env$2 (ite %init a!1 (or a!1 $V31_env$~1)))
+                (= $V27_invalid_s$2 a!2)
+                (= $V28_valid_s$2 0)
+                (= $V29_dirty_s$2 0)
+                (= $V83_X$2 a!1))))
+(let ((a!5 (ite (and (or (not $e_s1$0) (not $e_s2$0) (not $e_s3$0))
+                     (or (not $e_s2$0) (not $e_s3$0))
+                     (>= $init_invalid_s$0 0))
+                a!4
+                true)))
+  (ite (or (and $e_s1$0 $e_s2$0 $e_s3$0)
+           (and $e_s2$0 $e_s3$0)
+           (not (>= $init_invalid_s$0 0)))
+       a!4
+       a!5))))))
+(check-sat)
