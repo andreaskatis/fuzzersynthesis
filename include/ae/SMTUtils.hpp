@@ -143,7 +143,7 @@ namespace ufo
     Expr removeRedundantConjuncts(Expr exp)
     {
       ExprSet newCnjs;
-      ExprVector conjs;
+      ExprSet conjs;
       getConj(exp, conjs);
       
       if (conjs.size() < 2) return exp;
