@@ -20,7 +20,7 @@ namespace ufo
     ExprSet v; // existentially quantified vars
     ExprVector stVars;
     
-    ExprVector tConjs;
+    ExprSet tConjs;
     ExprSet usedConjs;
     ExprMap defMap;
     ExprSet conflictVars;
@@ -178,6 +178,39 @@ namespace ufo
       }
     }
     
+    /** 
+     * tmp
+     */
+    
+    void fillTmpDef(bool pos, Expr def, ExprMap& tmpDefMap, bool& addedDependants){
+      /*if (bind::isBoolConst(def)){
+        tmpDefMap[def] = pos ? mk<TRUE>(efac) : mk<FALSE>(efac);
+        addedDependants = true;
+      } else*/ if (isOpX<EQ>(def) && pos){
+        if (bind::isBoolConst(def->left()) ||
+            bind::isIntConst(def->left()) ||
+            bind::isRealConst(def->left())){
+          tmpDefMap[def->left()] = def->right();
+          addedDependants = true;
+        }
+        else if (bind::isBoolConst(def->right()) ||
+                 bind::isIntConst(def->right()) ||
+                 bind::isRealConst(def->right())){
+          tmpDefMap[def->right()] = def->left();
+          addedDependants = true;
+        }
+      } else if (isOpX<NEG>(def)){
+        fillTmpDef(!pos, def->left(), tmpDefMap, addedDependants);
+      } else if (isOpX<AND>(def)){
+        ExprSet cnjs;
+        getConj(def, cnjs);
+        for (auto &c : cnjs) fillTmpDef (pos, c, tmpDefMap, addedDependants);
+      }
+      else {
+        outs() << "WARNING! unsupported: " << *def << "\n";
+      }
+    }
+    
     /**
      * Global Skolem function from MBPs and local ones
      */
@@ -194,6 +227,29 @@ namespace ufo
       {
         ExprSet skoledvars;
         ExprMap substsMap;
+        ExprMap tmpDefMap;
+
+        // do booleans first
+        for (auto &exp: v) {
+          if (!bind::isBoolConst(exp)) continue;
+
+          bool addedDependants = false;
+
+          Expr exp2 = someEvals[i][exp];
+
+          if (defMap[exp] != NULL && exp2 != NULL) {
+            Expr def = defMap[exp];
+            
+            if (isOpX<TRUE>(exp2->right())) {
+              fillTmpDef(true, def, tmpDefMap, addedDependants);
+            } else if (isOpX<FALSE>(exp2->right())) {
+              fillTmpDef(false, def, tmpDefMap, addedDependants);
+            }
+          } 
+
+          if (addedDependants) tmpDefMap[exp] = exp2->right();
+        }
+
         for (auto &exp: v) {
           
           Expr exp2 = skolMaps[i][exp];
@@ -202,6 +258,10 @@ namespace ufo
           {
             // GF: todo simplif (?)
             exp2 = getAssignmentForVar(exp, exp2);
+          }
+          else if (tmpDefMap[exp] != NULL)
+          {
+            exp2 = tmpDefMap[exp];
           }
           else if (defMap[exp] != NULL)
           {
@@ -217,7 +277,7 @@ namespace ufo
             exp2 = getDefaultAssignment(exp);
           }
           
-          if (debug) outs() << "compiling skolem [pt1]: " << *exp <<  "    -- >   " << *exp2 << "\n";
+//          if (debug) outs() << "compiling skolem [pt1]: " << *exp <<  "    -->   " << *exp2 << "\n";
           
           substsMap[exp] = exp2;
         }
@@ -229,7 +289,7 @@ namespace ufo
         for (auto &exp: v) {
           refreshMapEntry(substsMap, exp);
           cnjs.push_back(mk<EQ>(exp, substsMap[exp]));
-          if (debug) outs() << "compiling skolem [pt2]: "  << *exp << " <-----> " << *substsMap[exp]<<"\n";
+//          if (debug) outs() << "compiling skolem [pt2]: "  << *exp << " <-----> " << *substsMap[exp]<<"\n";
         }
         
         instantiations.push_back(conjoin(cnjs, efac));

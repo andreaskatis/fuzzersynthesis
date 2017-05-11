@@ -758,7 +758,7 @@ namespace ufo
     return true;
   }
   
-  inline static void getConj (Expr a, ExprVector &conjs)
+  inline static void getConj (Expr a, ExprSet &conjs)
   {
     if (isOpX<TRUE>(a)) return;
     if (isOpX<AND>(a)){
@@ -766,8 +766,7 @@ namespace ufo
         getConj(a->arg(i), conjs);
       }
     } else {
-      if(find(conjs.begin(), conjs.end(), a) == conjs.end())
-        conjs.push_back(a);
+      conjs.insert(a);
     }
   }
   
@@ -784,12 +783,12 @@ namespace ufo
   }
   
   inline static Expr simplifiedAnd (Expr a, Expr b){
-    ExprVector conjs;
+    ExprSet conjs;
     getConj(a, conjs);
     getConj(b, conjs);
     return
     (conjs.size() == 0) ? mk<TRUE>(a->getFactory()) :
-    (conjs.size() == 1) ? conjs[0] :
+    (conjs.size() == 1) ? *(conjs.begin()) :
     mknary<AND>(conjs);
   }
   
