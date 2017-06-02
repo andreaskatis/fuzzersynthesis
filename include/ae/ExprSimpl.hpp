@@ -770,6 +770,18 @@ namespace ufo
     }
   }
   
+  inline static void getDisj (Expr a, ExprSet &disjs)
+  {
+    if (isOpX<TRUE>(a)) return;
+    if (isOpX<OR>(a)){
+      for (unsigned i = 0; i < a->arity(); i++){
+        getDisj(a->arg(i), disjs);
+      }
+    } else {
+      disjs.insert(a);
+    }
+  }
+  
   /**
    * To rem
    */

@@ -57,7 +57,7 @@ namespace ufo
       getConj(t, tConjs);
       for (auto &exp: v) {
         Expr definition = getDefinitionFormulaFromT(exp);
-        defMap[exp] = definition;
+        if (definition != NULL) defMap[exp] = u.simplifyITE(definition);
       }
     }
     
@@ -182,35 +182,78 @@ namespace ufo
      * tmp
      */
     
-    void fillTmpDef(bool pos, Expr def, ExprMap& tmpDefMap, bool& addedDependants){
-      /*if (bind::isBoolConst(def)){
-        tmpDefMap[def] = pos ? mk<TRUE>(efac) : mk<FALSE>(efac);
-        addedDependants = true;
-      } else*/ if (isOpX<EQ>(def) && pos){
-        if (bind::isBoolConst(def->left()) ||
-            bind::isIntConst(def->left()) ||
-            bind::isRealConst(def->left())){
-          tmpDefMap[def->left()] = def->right();
-          addedDependants = true;
+    void fillTmpDef(ExprMap& eval, bool pos, Expr def, ExprMap& tmpDefMap){
+
+      if (isOpX<EQ>(def)){
+
+        Expr l = def->left();
+        Expr r = def->right();
+
+        bool hl = find(std::begin(v), std::end (v), l) != std::end(v);
+        bool hr = find(std::begin(v), std::end (v), r) != std::end(v);
+
+        if (pos){
+
+          if (hl && (bind::isBoolConst(l) || bind::isIntConst(l) || bind::isRealConst(l))){
+            tmpDefMap[l] = r;
+          }
+          if (hr && (bind::isBoolConst(r) || bind::isIntConst(r) || bind::isRealConst(r))){
+            tmpDefMap[r] = l;
+          }
+          if (hl && isOpX<NEG>(l) && bind::isBoolConst(l->left())){
+            tmpDefMap[l->left()] = mk<NEG>(r);
+          }
+          if (hr && isOpX<NEG>(r) && bind::isBoolConst(r->left())){
+            tmpDefMap[r->left()] = mk<NEG>(l);
+          }
+
+        } else {
+
+          if (hl && bind::isBoolConst(l)){
+            tmpDefMap[l] = mk<NEG>(r);
+          }
+          if (hr && bind::isBoolConst(r)){
+            tmpDefMap[r] = mk<NEG>(l);
+          }
+          if (hl && isOpX<NEG>(l) && bind::isBoolConst(l->left())){
+            tmpDefMap[l->left()] = r;
+          }
+          if (hr && isOpX<NEG>(r) && bind::isBoolConst(r->left())){
+            tmpDefMap[r->left()] = l;
+          }
         }
-        else if (bind::isBoolConst(def->right()) ||
-                 bind::isIntConst(def->right()) ||
-                 bind::isRealConst(def->right())){
-          tmpDefMap[def->right()] = def->left();
-          addedDependants = true;
-        }
+
       } else if (isOpX<NEG>(def)){
-        fillTmpDef(!pos, def->left(), tmpDefMap, addedDependants);
+
+        fillTmpDef(eval, !pos, def->left(), tmpDefMap);
+
+      } else if (isOpX<ITE>(def)){
+
+        fillTmpDef(eval, pos, mk<IMPL>(def->arg(0), def->arg(1)), tmpDefMap);
+        fillTmpDef(eval, pos, mk<IMPL>(mk<NEG>(def->arg(0)), def->arg(2)), tmpDefMap);
+
+      } else if (isOpX<IMPL>(def)){
+
+        if (pos)fillTmpDef(eval, pos, mk<OR>(mk<NEG>(def->left()), def->right()), tmpDefMap);
+
       } else if (isOpX<AND>(def)){
+
         ExprSet cnjs;
         getConj(def, cnjs);
-        for (auto &c : cnjs) fillTmpDef (pos, c, tmpDefMap, addedDependants);
+        if (pos) for (auto &c : cnjs) fillTmpDef (eval, pos, c, tmpDefMap);
+
+      } else if (isOpX<OR>(def)){
+
+        ExprSet dsjs;
+        getDisj(def, dsjs);
+        if (!pos) for (auto &c : dsjs) fillTmpDef (eval, pos, c, tmpDefMap);
+
       }
       else {
-        outs() << "WARNING! unsupported: " << *def << "\n";
+        if (debug) outs() << "WARNING! unsupported: " << *def << "\n";
       }
     }
-    
+
     /**
      * Global Skolem function from MBPs and local ones
      */
@@ -233,21 +276,21 @@ namespace ufo
         for (auto &exp: v) {
           if (!bind::isBoolConst(exp)) continue;
 
-          bool addedDependants = false;
-
+          int curSz = tmpDefMap.size();
           Expr exp2 = someEvals[i][exp];
 
           if (defMap[exp] != NULL && exp2 != NULL) {
+
             Expr def = defMap[exp];
-  
+
             if (isOpX<TRUE>(exp2->right())) {
-              fillTmpDef(true, def, tmpDefMap, addedDependants);
+              fillTmpDef(someEvals[i], true, def, tmpDefMap);
             } else if (isOpX<FALSE>(exp2->right())) {
-              fillTmpDef(false, def, tmpDefMap, addedDependants);
+              fillTmpDef(someEvals[i], false, def, tmpDefMap);
             }
           }
 
-          if (addedDependants) tmpDefMap[exp] = exp2->right();
+          if (tmpDefMap.size() > curSz) tmpDefMap[exp] = exp2->right();
         }
 
         for (auto &exp: v) {
@@ -277,7 +320,7 @@ namespace ufo
             exp2 = getDefaultAssignment(exp);
           }
 
-          //          if (debug) outs() << "compiling skolem [pt1]: " << *exp <<  "    -->   " << *exp2 << "\n";
+          if (debug) outs() << "compiling skolem [pt1]: " << *exp <<  "    -->   " << *exp2 << "\n";
 
           substsMap[exp] = exp2;
         }
@@ -289,11 +332,12 @@ namespace ufo
         for (auto &exp: v) {
           refreshMapEntry(substsMap, exp);
           cnjs.push_back(mk<EQ>(exp, substsMap[exp]));
-          //          if (debug) outs() << "compiling skolem [pt2]: "  << *exp << " <-----> " << *substsMap[exp]<<"\n";
         }
 
         instantiations.push_back(conjoin(cnjs, efac));
-        if (debug) outs() << "Sanity check [" <<i << "]: " << u.isImplies(mk<AND> (s,mk<AND> (projections[i], instantiations[i])), t) << "\n";
+
+        if (debug) outs() << "Sanity check [" << i << "]: " << u.isImplies(mk<AND> (s, mk<AND> (projections[i], instantiations[i])), t) << "\n";
+
       }
       Expr sk = mk<TRUE>(efac);
       
@@ -332,7 +376,7 @@ namespace ufo
         if (std::find(std::begin(usedConjs),
                       std::end  (usedConjs), cnj) != std::end(usedConjs)) continue;
 
-        if (isOpX<EQ>(cnj) )
+        if (isOpX<EQ>(cnj))
         {
           if (var == cnj->left())
           {
