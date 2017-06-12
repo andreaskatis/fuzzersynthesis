@@ -84,16 +84,11 @@ namespace ufo
         Expr br1 = ex->arg(1);
         Expr br2 = ex->arg(2);
         
-        Expr updCond1 = mk<AND>(upLevelCond, mk<NEG>(cond));
-        Expr updCond2 = mk<AND>(mk<NEG>(upLevelCond), cond);
-        
-        if (!isSat(updCond1)) return br1;
-        
-        if (!isSat(updCond2)) return br2;
+        if (!isSat(upLevelCond)) return simplifyITE(br1, mk<TRUE>(efac));
         
         return mk<ITE>(cond,
-                       simplifyITE(br1, updCond1),
-                       simplifyITE(br2, updCond2));
+                       simplifyITE(br1, mk<OR>(upLevelCond, cond)),
+                       simplifyITE(br2, mk<OR>(upLevelCond, mk<NEG>(cond))));
       } else {
         return ex;
       }
