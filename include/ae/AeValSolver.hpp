@@ -37,6 +37,7 @@ namespace ufo
     vector<ExprMap> skolMaps;
     vector<ExprMap> someEvals;
     Expr skolSkope;
+    Expr tmpConstraints;
     
     bool debug;
     unsigned fresh_var_ind;
@@ -252,14 +253,27 @@ namespace ufo
 
         ExprSet cnjs;
         getConj(def, cnjs);
-        if (pos) for (auto &c : cnjs) fillTmpDef (eval, pos, c, tmpDefMap);
+
+        ExprSet newCnjs;
+        for (auto &a : cnjs) {
+          if (!u.isSat(mk<AND>(mk<NEG> (a), tmpConstraints))) newCnjs.insert(a);
+        }
+
+        if (!pos && newCnjs.size() == 1) fillTmpDef (eval, pos, *newCnjs.begin(), tmpDefMap);
+        else if (pos) for (auto &c : cnjs) fillTmpDef (eval, pos, c, tmpDefMap);
 
       } else if (isOpX<OR>(def)){
 
         ExprSet dsjs;
         getDisj(def, dsjs);
-        if (!pos) for (auto &c : dsjs) fillTmpDef (eval, pos, c, tmpDefMap);
 
+        ExprSet newDsjs;
+        for (auto &a : dsjs) {
+          if (u.isSat(mk<AND>(a, tmpConstraints))) newDsjs.insert(a);
+        }
+
+        if (pos && newDsjs.size() == 1) fillTmpDef (eval, pos, *newDsjs.begin(), tmpDefMap);
+        else if (!pos) for (auto &c : newDsjs) fillTmpDef (eval, pos, c, tmpDefMap);
       }
       else {
         if (debug) outs() << "WARNING! unsupported: " << *def << "\n";
@@ -283,7 +297,15 @@ namespace ufo
         ExprSet skoledvars;
         ExprMap substsMap;
         ExprMap tmpDefMap;
-        ExprMap depMap;
+        ExprMap useEvalMap;
+
+        ExprSet acs;
+        for (auto &exp: v) {
+          Expr exp2 = skolMaps[i][exp];
+          if (exp2 != NULL) acs.insert(exp2);
+        }
+
+        tmpConstraints = conjoin(acs, efac);
 
         // do booleans first
         for (auto &exp: v) {
@@ -303,14 +325,14 @@ namespace ufo
             }
           }
 
-          if (tmpDefMap.size() > curSz) defMap[exp] = exp2->right();
+          if (tmpDefMap.size() > curSz) useEvalMap[exp] = exp2->right();
         }
 
         for (auto &exp: v) {
 
           Expr exp2 = skolMaps[i][exp];
           if (exp2 != NULL) { exp2 = getAssignmentForVar(exp, exp2); }
-          if (exp2 == NULL) { exp2 = depMap[exp]; }
+          if (exp2 == NULL) { exp2 = useEvalMap[exp]; }
           if (exp2 == NULL) { exp2 = tmpDefMap[exp]; }
           if (exp2 == NULL) { exp2 = defMap[exp]; }
 
