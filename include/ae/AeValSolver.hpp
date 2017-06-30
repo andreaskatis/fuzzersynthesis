@@ -18,12 +18,14 @@ namespace ufo
     Expr s;
     Expr t;
     ExprSet v; // existentially quantified vars
+    ExprVector sVars;
     ExprVector stVars;
     
     ExprSet tConjs;
     ExprSet usedConjs;
     ExprMap defMap;
     ExprSet conflictVars;
+    ExprMap modelInvalid;
     
     ExprFactory &efac;
     EZ3 z3;
@@ -54,6 +56,7 @@ namespace ufo
     partitioning_size(0),
     debug(0)
     {
+      filter (s, bind::IsConst (), back_inserter (sVars));
       filter (boolop::land(s,t), bind::IsConst (), back_inserter (stVars));
       getConj(t, tConjs);
       for (auto &exp: v) {
@@ -69,10 +72,18 @@ namespace ufo
     {
       smt.reset();
       smt.assertExpr (s);
+
       if (!smt.solve ()) {
         outs() << "\nE.v.: -; Iter.: 0; Result: valid\n\n";
         return false;
+      } else {
+        ZSolver<EZ3>::Model m = smt.getModel();
+
+        for (auto &e: sVars)
+          // keep a model in case the formula is invalid
+          modelInvalid[e] = m.eval(e);
       }
+
       if (v.size () == 0)
       {
         smt.assertExpr (boolop::lneg (t));
@@ -90,6 +101,7 @@ namespace ufo
       {
         outs() << ".";
         outs().flush ();
+
         ZSolver<EZ3>::Model m = smt.getModel();
 
         if (debug && false)
@@ -107,7 +119,14 @@ namespace ufo
 
         smt.pop();
         smt.assertExpr(boolop::lneg(projections[partitioning_size++]));
-        if (!smt.solve()) { res = false; break; }
+        if (!smt.solve()) {
+          res = false; break;
+        } else {
+          // keep a model in case the formula is invalid
+          m = smt.getModel();
+          for (auto &e: sVars)
+            modelInvalid[e] = m.eval(e);
+        }
 
         smt.push();
         smt.assertExpr (t);
@@ -133,7 +152,7 @@ namespace ufo
         pr = z3_qe_model_project_skolem (z3, m, exp, pr, map);
         getLocalSkolems(m, exp, map, substsMap, modelMap, pr);
       }
-      
+
       if (debug) assert(emptyIntersect(pr, v));
 
       someEvals.push_back(modelMap);
@@ -385,6 +404,21 @@ namespace ufo
       return mk<AND>(s, disjoin(projections, efac));
     }
     
+    /**
+     * Model of S /\ \neg T (if AE-formula is invalid)
+     */
+    void printModelNeg()
+    {
+      outs () << "(model\n";
+      for (auto &var : sVars)
+        outs () << "  (define-fun " << *var << " () " <<
+          (bind::isBoolConst(var) ? "Bool" : (bind::isIntConst(var) ? "Int" : "Real"))
+            << "\n    " <<
+              (var == modelInvalid[var] ? *getDefaultAssignment(var) : *modelInvalid[var]) << ")\n";
+
+      outs () << ")\n";
+    }
+
     /**
      * Mine the structure of T to get what was assigned to a variable
      */
@@ -773,6 +807,7 @@ namespace ufo
     
     Expr res;
     if (ae.solve()){
+      ae.printModelNeg();
       res = ae.getValidSubset();
       outs() << "\nvalid subset:\n";
     } else {
