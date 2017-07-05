@@ -78,12 +78,27 @@ namespace ufo
    * Self explanatory
    */
   inline static Expr additiveInverse(Expr e){
-    if (isOpX<MULT>(e)){
+
+    if (isOpX<UN_MINUS>(e)){
+      return e->left();
+    }
+    else if (isOpX<MPQ>(e)){
+      int val = lexical_cast<int>(e);
+      return mkTerm (mpq_class (-val), e->getFactory());
+    }
+    else if (isOpX<MPZ>(e)){
+      int val = lexical_cast<int>(e);
+      return mkTerm (mpz_class (-val), e->getFactory());
+    }
+    else if (isOpX<MULT>(e)){
       if (lexical_cast<string>(e->left()) == "-1"){
         return e->right();
+      } else if (e->arity() == 2) {
+        Expr c = additiveInverse(e->left());
+        return mk<MULT>(c, e->right());
       }
     }
-    return mk<MULT>(mkTerm (mpz_class (-1), e->getFactory()), e);
+    return mk<MULT>(mkTerm (mpq_class (-1), e->getFactory()), e);
   }
   
   /**
@@ -121,20 +136,11 @@ namespace ufo
    */
   template <typename T> static Expr rewriteHelperN(Expr e){
     assert(e->arity() == 2);
-    Expr minus_one = mkTerm (mpz_class (-1), e->getFactory());
-    
-    Expr l = multZero(e->left(), minus_one);
-    Expr r = multZero(exprDistributor(e->right()), minus_one);
-    if (!isOpX<MULT>(r))
-      r = mk<MULT>(minus_one, mk<MULT>(minus_one,r)); // a bit of hack
-    
-    if (isOpX<MULT>(l) && isOpX<MULT>(r)){
-      if (lexical_cast<string>(l->left())  == "-1" &&
-          lexical_cast<string>(r->left())  == "-1" ){
-        return mk<T>(l->right(), r->right());
-      }
-    }
-    return e;
+    if (!isOpX<UN_MINUS>(e->left()) &&
+        !(isOpX<MULT>(e->left()) &&
+          lexical_cast<string>(e->left()->left()) == "-1") ) return e;
+
+    return mk<T>(additiveInverse(e->left()), additiveInverse(exprDistributor(e->right())));
   }
   
   /**
@@ -156,6 +162,14 @@ namespace ufo
           continue;
         }
         rhs.insert(additiveInverse(a));
+      }
+    } else if (isOpX<MINUS>(l)){
+      if (IsConstOrItsAdditiveInverse(l->left(), var)){
+        lhs = l->left();
+        rhs.insert(additiveInverse(l->right()));
+      } else if (IsConstOrItsAdditiveInverse(l->right(), var)){
+        lhs = l->right();
+        rhs.insert(additiveInverse(l->left()));
       }
     } else {
       if (IsConstOrItsAdditiveInverse(l, var)){
@@ -314,6 +328,8 @@ namespace ufo
         return rewriteHelperN<LT>(e);
       } else if (isOpX<EQ>(e)){
         return rewriteHelperN<EQ>(e);
+      } else if (isOpX<NEQ>(e)){
+        return rewriteHelperN<NEQ>(e);
       }
     return e;
   }
@@ -329,6 +345,10 @@ namespace ufo
         return mk<GEQ>(e->arg(0), e->arg(1));
       } else if (isOpX<GT>(e)){
         return mk<LEQ>(e->arg(0), e->arg(1));
+      } else if (isOpX<NEQ>(e)){
+        return mk<EQ>(e->arg(0), e->arg(1));
+      } else if (isOpX<EQ>(e)){
+        return mk<NEQ>(e->arg(0), e->arg(1));
       }
     }
     return a;
@@ -354,6 +374,8 @@ namespace ufo
         return rewriteHelperM<GT>(e, var);
       } else if (isOpX<EQ>(e)){
         return rewriteHelperM<EQ>(e, var);
+      } else if (isOpX<NEQ>(e)){
+        return rewriteHelperM<NEQ>(e, var);
       }
     return e;
   }
@@ -468,17 +490,19 @@ namespace ufo
   };
   
   inline static Expr simplifiedPlus (Expr exp, Expr to_skip){
-    
     ExprVector args;
-    
     Expr ret;
+    bool f = false;
     
     for (ENode::args_iterator it = exp->args_begin(),
          end = exp->args_end(); it != end; ++it){
-      Expr a = *it;
-      if (a != to_skip) {
-        args.push_back (a);
-      }
+      if (*it == to_skip) f = true;
+      else args.push_back (*it);
+    }
+
+    if (f == false)
+    {
+      args.push_back(additiveInverse(to_skip));
     }
     
     if (args.size() == 1) {
@@ -487,7 +511,7 @@ namespace ufo
     
     else if (args.size() == 2){
       if (isOpX<UN_MINUS>(args[0]) && !isOpX<UN_MINUS>(args[1]))
-        ret =  mk<MINUS>(args[1], args[0]->left());
+        ret = mk<MINUS>(args[1], args[0]->left());
       else if (!isOpX<UN_MINUS>(args[0]) && isOpX<UN_MINUS>(args[1]))
         ret = mk<MINUS>(args[0], args[1]->left());
       
@@ -496,13 +520,11 @@ namespace ufo
     } else {
       ret = mknary<PLUS>(args);
     }
-    
     return ret;
   }
   
   // return a - b
   inline static Expr simplifiedMinus (Expr a, Expr b){
-    
     Expr ret = mk<MINUS>(a, b);
     
     if (a == b) {
@@ -510,13 +532,12 @@ namespace ufo
     } else
       
       if (isOpX<PLUS>(a)){
-        Expr res = simplifiedPlus(a, b);
-        if (res->arity() == a->arity() - 1) ret = res;
+        return simplifiedPlus(a, b);
       } else
         
         if (isOpX<PLUS>(b)){
           Expr res = simplifiedPlus(b, a);
-          if (res->arity() == b->arity() - 1) ret = mk<UN_MINUS>(res);
+          return mk<UN_MINUS>(res);
         } else
           
           if (isOpX<MINUS>(a)){
@@ -810,6 +831,74 @@ namespace ufo
     for (auto &var: a)
       if (find(b.begin(), b.end(), var) != b.end()) c.insert(var);
     return c.size();
+  }
+
+  // not very pretty method, but..
+  inline static Expr reBuildCmp(Expr term, Expr lhs, Expr rhs)
+  {
+    if (isOpX<EQ>(term)){
+      return mk<EQ>(lhs, rhs);
+    }
+    if (isOpX<NEQ>(term)){
+      return mk<NEQ>(lhs, rhs);
+    }
+    if (isOpX<LEQ>(term)){
+      return mk<LEQ>(lhs, rhs);
+    }
+    if (isOpX<GEQ>(term)){
+      return mk<GEQ>(lhs, rhs);
+    }
+    if (isOpX<LT>(term)){
+      return mk<LT>(lhs, rhs);
+    }
+    assert(isOpX<GT>(term));
+    return mk<GT>(lhs, rhs);
+  }
+
+  inline static Expr simplIneqMover(Expr exp)
+  {
+    exp = ineqNegReverter(exp);
+    if (lexical_cast<string>(exp->right()) == "0") return exp;
+
+    // GF: find a better way how to move things
+    exp = reBuildCmp(exp, simplifiedMinus(exp->left(), exp->right()),
+                     mkTerm (mpz_class (0), exp->getFactory()));
+    return exp;
+  }
+
+  inline static Expr mergeIneqs(Expr exp1, Expr exp2)
+  {
+    Expr res;
+
+    exp1 = simplIneqMover(exp1);
+    exp2 = simplIneqMover(exp2);
+
+    Expr e1l = exp1->left();
+    Expr e2l = exp2->left();
+
+    // hack for now
+    if (isOpX<UN_MINUS>(e1l) && isOpX<PLUS>(e1l->left())) return NULL;
+    if (isOpX<UN_MINUS>(e2l) && isOpX<PLUS>(e2l->left())) return NULL;
+
+    if (isOpX<LT>(exp1) && isOpX<GT>(exp2)) {
+      res = mk<LT>(e1l, e2l);
+    } else if (isOpX<LEQ>(exp1) && isOpX<GT>(exp2)) {
+      res = mk<LT>(e1l, e2l);
+    } else if (isOpX<LT>(exp1) && isOpX<GEQ>(exp2)) {
+      res = mk<LT>(e1l, e2l);
+    } else if (isOpX<LEQ>(exp1) && isOpX<GEQ>(exp2)) {
+      res = mk<LEQ>(e1l, e2l);
+    } else if (isOpX<GT>(exp1) && isOpX<LT>(exp2)) {
+      res = mk<GT>(e1l, e2l);
+    } else if (isOpX<GEQ>(exp1) && isOpX<LT>(exp2)) {
+      res = mk<GT>(e1l, e2l);
+    } else if (isOpX<GT>(exp1) && isOpX<LEQ>(exp2)) {
+      res = mk<GT>(e1l, e2l);
+    } else if (isOpX<GEQ>(exp1) && isOpX<LEQ>(exp2)) {
+      res = mk<GEQ>(e1l, e2l);
+    }
+
+    return res;
   }
 }
 

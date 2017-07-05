@@ -18,12 +18,14 @@ namespace ufo
     Expr s;
     Expr t;
     ExprSet v; // existentially quantified vars
+    ExprVector sVars;
     ExprVector stVars;
     
     ExprSet tConjs;
     ExprSet usedConjs;
     ExprMap defMap;
     ExprSet conflictVars;
+    ExprMap modelInvalid;
     
     ExprFactory &efac;
     EZ3 z3;
@@ -37,6 +39,7 @@ namespace ufo
     vector<ExprMap> skolMaps;
     vector<ExprMap> someEvals;
     Expr skolSkope;
+    Expr tmpConstraints;
     
     bool debug;
     unsigned fresh_var_ind;
@@ -53,6 +56,7 @@ namespace ufo
     partitioning_size(0),
     debug(0)
     {
+      filter (s, bind::IsConst (), back_inserter (sVars));
       filter (boolop::land(s,t), bind::IsConst (), back_inserter (stVars));
       getConj(t, tConjs);
       for (auto &exp: v) {
@@ -68,10 +72,18 @@ namespace ufo
     {
       smt.reset();
       smt.assertExpr (s);
+
       if (!smt.solve ()) {
         outs() << "\nE.v.: -; Iter.: 0; Result: valid\n\n";
         return false;
+      } else {
+        ZSolver<EZ3>::Model m = smt.getModel();
+
+        for (auto &e: sVars)
+          // keep a model in case the formula is invalid
+          modelInvalid[e] = m.eval(e);
       }
+
       if (v.size () == 0)
       {
         smt.assertExpr (boolop::lneg (t));
@@ -89,6 +101,7 @@ namespace ufo
       {
         outs() << ".";
         outs().flush ();
+
         ZSolver<EZ3>::Model m = smt.getModel();
 
         if (debug && false)
@@ -106,7 +119,14 @@ namespace ufo
 
         smt.pop();
         smt.assertExpr(boolop::lneg(projections[partitioning_size++]));
-        if (!smt.solve()) { res = false; break; }
+        if (!smt.solve()) {
+          res = false; break;
+        } else {
+          // keep a model in case the formula is invalid
+          m = smt.getModel();
+          for (auto &e: sVars)
+            modelInvalid[e] = m.eval(e);
+        }
 
         smt.push();
         smt.assertExpr (t);
@@ -132,7 +152,9 @@ namespace ufo
         pr = z3_qe_model_project_skolem (z3, m, exp, pr, map);
         getLocalSkolems(m, exp, map, substsMap, modelMap, pr);
       }
-      
+
+      if (debug) assert(emptyIntersect(pr, v));
+
       someEvals.push_back(modelMap);
       skolMaps.push_back(substsMap);
       projections.push_back(pr);
@@ -161,18 +183,24 @@ namespace ufo
               ef = ineqNegReverter(mk<NEG>(ef));
             }
             substs.insert(ef);
+          } else if (es == mbp) {
+            substs.insert(ineqNegReverter(ef));
+          } else if (!(isOp<BoolOp>(ef) && isOp<BoolOp>(es)) &&
+                     !(isOp<ComparissonOp>(ef) && isOp<ComparissonOp>(es)) &&
+                     !(isOp<BoolOp>(ef) && isOp<ComparissonOp>(es)) &&
+                     !(isOp<ComparissonOp>(ef) && isOp<BoolOp>(es))){
+            substs.insert(mk<EQ>(ineqNegReverter(ef), ineqNegReverter(es)));
           } else {
-            if (es == mbp) substs.insert(ineqNegReverter(ef));
-            else if (!(isOp<BoolOp>(ef) && isOp<BoolOp>(es)) &&
-                     !(isOp<ComparissonOp>(ef) && isOp<ComparissonOp>(es))){
-               substs.insert(mk<EQ>(ineqNegReverter(ef), ineqNegReverter(es)));
+            Expr mergedSides = mergeIneqs(ef, es);
+            if (mergedSides != NULL) {
+              substs.insert(mergedSides);
             }
           }
         }
         if (substs.size() == 0) outs() << "WARNING: subst is empty for " << *exp << "\n";
         substsMap[exp] = conjoin(substs, efac);
-      }
-      else if (m.eval(exp) != exp){
+
+      } else if (m.eval(exp) != exp){
         if (debug) outs () << "model: " << *exp <<  "  <-->  " << *m.eval(exp) << "\n";
         modelMap[exp] = mk<EQ>(exp, m.eval(exp));
       }
@@ -223,9 +251,13 @@ namespace ufo
           }
         }
 
+      } else if (isOpX<NEQ>(def)){
+
+        if (pos) fillTmpDef(eval, !pos, mk<EQ>(def->left(), def->right()), tmpDefMap);
+
       } else if (isOpX<NEG>(def)){
 
-        fillTmpDef(eval, !pos, def->left(), tmpDefMap);
+        if (pos) fillTmpDef(eval, !pos, def->left(), tmpDefMap);
 
       } else if (isOpX<ITE>(def)){
 
@@ -234,20 +266,33 @@ namespace ufo
 
       } else if (isOpX<IMPL>(def)){
 
-        if (pos)fillTmpDef(eval, pos, mk<OR>(mk<NEG>(def->left()), def->right()), tmpDefMap);
+        if (pos) fillTmpDef(eval, pos, mk<OR>(mk<NEG>(def->left()), def->right()), tmpDefMap);
 
       } else if (isOpX<AND>(def)){
 
         ExprSet cnjs;
         getConj(def, cnjs);
-        if (pos) for (auto &c : cnjs) fillTmpDef (eval, pos, c, tmpDefMap);
+
+        ExprSet newCnjs;
+        for (auto &a : cnjs) {
+          if (!u.isSat(mk<AND>(mk<NEG> (a), tmpConstraints))) newCnjs.insert(a);
+        }
+
+        if (!pos && newCnjs.size() == 1) fillTmpDef (eval, pos, *newCnjs.begin(), tmpDefMap);
+        else if (pos) for (auto &c : cnjs) fillTmpDef (eval, pos, c, tmpDefMap);
 
       } else if (isOpX<OR>(def)){
 
         ExprSet dsjs;
         getDisj(def, dsjs);
-        if (!pos) for (auto &c : dsjs) fillTmpDef (eval, pos, c, tmpDefMap);
 
+        ExprSet newDsjs;
+        for (auto &a : dsjs) {
+          if (u.isSat(mk<AND>(a, tmpConstraints))) newDsjs.insert(a);
+        }
+
+        if (pos && newDsjs.size() == 1) fillTmpDef (eval, pos, *newDsjs.begin(), tmpDefMap);
+        else if (!pos) for (auto &c : newDsjs) fillTmpDef (eval, pos, c, tmpDefMap);
       }
       else {
         if (debug) outs() << "WARNING! unsupported: " << *def << "\n";
@@ -271,6 +316,15 @@ namespace ufo
         ExprSet skoledvars;
         ExprMap substsMap;
         ExprMap tmpDefMap;
+        ExprMap useEvalMap;
+
+        ExprSet acs;
+        for (auto &exp: v) {
+          Expr exp2 = skolMaps[i][exp];
+          if (exp2 != NULL) acs.insert(exp2);
+        }
+
+        tmpConstraints = conjoin(acs, efac);
 
         // do booleans first
         for (auto &exp: v) {
@@ -290,35 +344,20 @@ namespace ufo
             }
           }
 
-          if (tmpDefMap.size() > curSz) tmpDefMap[exp] = exp2->right();
+          if (tmpDefMap.size() > curSz) useEvalMap[exp] = exp2->right();
         }
 
         for (auto &exp: v) {
 
           Expr exp2 = skolMaps[i][exp];
+          if (exp2 != NULL) { exp2 = getAssignmentForVar(exp, exp2); }
+          if (exp2 == NULL) { exp2 = useEvalMap[exp]; }
+          if (exp2 == NULL) { exp2 = tmpDefMap[exp]; }
+          if (exp2 == NULL) { exp2 = defMap[exp]; }
 
-          if (exp2 != NULL)
-          {
-            // GF: todo simplif (?)
-            exp2 = getAssignmentForVar(exp, exp2);
-          }
-          else if (tmpDefMap[exp] != NULL)
-          {
-            exp2 = tmpDefMap[exp];
-          }
-          else if (defMap[exp] != NULL)
-          {
-            // GF: todo simplif (?)
-            exp2 = defMap[exp];
-          }
-          else if (someEvals[i][exp] != NULL)
-          {
-            exp2 = someEvals[i][exp]->right();
-          }
-          else
-          {
-            exp2 = getDefaultAssignment(exp);
-          }
+          Expr exp3 = someEvals[i][exp];
+          if (exp2 == NULL && exp3 != NULL) { exp2 = exp3->right(); }
+          if (exp2 == NULL) { exp2 = getDefaultAssignment(exp); }
 
           if (debug) outs() << "compiling skolem [pt1]: " << *exp <<  "    -->   " << *exp2 << "\n";
 
@@ -336,7 +375,8 @@ namespace ufo
 
         instantiations.push_back(conjoin(cnjs, efac));
 
-        if (debug) outs() << "Sanity check [" << i << "]: " << u.isImplies(mk<AND> (s, mk<AND> (projections[i], instantiations[i])), t) << "\n";
+        if (debug) outs() << "Sanity check [" << i << "]: " << u.isImplies(mk<AND>
+              (mk<AND>(s, skolSkope), mk<AND> (projections[i], instantiations[i])), t) << "\n";
 
       }
       Expr sk = mk<TRUE>(efac);
@@ -364,6 +404,21 @@ namespace ufo
       return mk<AND>(s, disjoin(projections, efac));
     }
     
+    /**
+     * Model of S /\ \neg T (if AE-formula is invalid)
+     */
+    void printModelNeg()
+    {
+      outs () << "(model\n";
+      for (auto &var : sVars)
+        outs () << "  (define-fun " << *var << " () " <<
+          (bind::isBoolConst(var) ? "Bool" : (bind::isIntConst(var) ? "Int" : "Real"))
+            << "\n    " <<
+              (var == modelInvalid[var] ? *getDefaultAssignment(var) : *modelInvalid[var]) << ")\n";
+
+      outs () << ")\n";
+    }
+
     /**
      * Mine the structure of T to get what was assigned to a variable
      */
@@ -532,6 +587,9 @@ namespace ufo
         else if (isOpX<GT>(exp)){
           return getPlusConst (exp->right(), isInt, 1);
         }
+        else if (isOpX<NEQ>(exp)){
+          return getPlusConst (exp->right(), isInt, 1);
+        }
         else assert(0);
       }
       else if (isOpX<NEG>(exp)){
@@ -554,40 +612,44 @@ namespace ufo
         ExprSet conjNEG;
         ExprSet conjEG;
         for (auto it = exp->args_begin(), end = exp->args_end(); it != end; ++it){
-          if (isOpX<EQ>(*it)){
-            if (var == (*it)->left()) {
-              conjEG.insert((*it)->right());
+          Expr cnj = *it;
+
+          // GF: little hack; TODO: make a proper rewriter
+          if (isOpX<NEG>(cnj) && isOpX<EQ>(cnj->left())) {
+            cnj = mk<NEQ>(cnj->left()->left(), cnj->left()->right());
+          }
+
+          cnj = ineqReverter(ineqMover(cnj, var));
+
+          if (isOpX<EQ>(cnj)){
+            if (var == cnj->left()) {
+              conjEG.insert(cnj->right());
             } else {
               incomplete = true;
             }
           }
-          else if (isOpX<LT>(*it) || isOpX<LEQ>(*it)){
-            if (var == (*it)->left()) {
-              conjLT.insert((*it)->right());
-            } else if (var == (*it)->right()) {
-              conjGT.insert((*it)->left());
+          else if (isOpX<LT>(cnj) || isOpX<LEQ>(cnj)){
+            if (var == cnj->left()) {
+              conjLT.insert(cnj->right());
+            } else if (var == cnj->right()) {
+              conjGT.insert(cnj->left());
             } else {
               incomplete = true;
             }
           }
-          else if (isOpX<GT>(*it) || isOpX<GEQ>(*it)){
-            if (var == (*it)->left()) {
-              conjGT.insert((*it)->right());
-            } else if (var == (*it)->right()) {
-              conjLT.insert((*it)->left());
+          else if (isOpX<GT>(cnj) || isOpX<GEQ>(cnj)){
+            if (var == cnj->left()) {
+              conjGT.insert(cnj->right());
+            } else if (var == cnj->right()) {
+              conjLT.insert(cnj->left());
             } else {
               incomplete = true;
             }
-          } else if (isOpX<NEG>(*it)){
-            Expr negated = (*it)->left();
-  
-            if (isOpX<EQ>(negated)){
-    
-              if (var == negated->left()) {
-                conjNEG.insert(negated->right());
-              } else {
-                incomplete = true;
-              }
+          } else if (isOpX<NEQ>(cnj)){
+            if (var == cnj->left()) {
+              conjNEG.insert(cnj->right());
+            } else {
+              incomplete = true;
             }
           }
         }
@@ -596,7 +658,7 @@ namespace ufo
 
         if (conjEG.size() > 0) return *(conjEG.begin()); // GF: maybe try to find the best of them
 
-        if (incomplete) outs() << "WARNING: Some Skolem constraints unsupported\n";
+        if (incomplete && debug) outs() << "WARNING: Some Skolem constraints unsupported\n";
 
         // get symbolic max and min
 
@@ -610,7 +672,6 @@ namespace ufo
 
         Expr extraDefsMin = mk<TRUE>(efac);
         Expr curMin;
-
         if (conjLT.size() > 1){
           GetSymbolicMin(conjLT, curMin, isInt);
         } else if (conjLT.size() == 1){
@@ -631,7 +692,7 @@ namespace ufo
           }
         }
 
-        // here and later, we get conjNEG.size() > 0
+        // here conjNEG.size() > 0
 
         if (conjLT.size() > 0 && conjGT.size() == 0) {
           conjNEG.insert(curMin);
@@ -641,11 +702,6 @@ namespace ufo
 
         if (conjLT.size() == 0 && conjGT.size() > 0) {
           conjNEG.insert(curMax);
-          GetSymbolicMax(conjNEG, curMax, isInt);
-          return getPlusConst (curMax, isInt, 1);
-        }
-
-        if (conjLT.size() == 0 && conjGT.size() == 0) {
           GetSymbolicMax(conjNEG, curMax, isInt);
           return getPlusConst (curMax, isInt, 1);
         }
@@ -751,6 +807,7 @@ namespace ufo
     
     Expr res;
     if (ae.solve()){
+      ae.printModelNeg();
       res = ae.getValidSubset();
       outs() << "\nvalid subset:\n";
     } else {
