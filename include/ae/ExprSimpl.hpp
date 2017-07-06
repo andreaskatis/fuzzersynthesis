@@ -83,8 +83,16 @@ namespace ufo
       return e->left();
     }
     else if (isOpX<MPQ>(e)){
-      int val = lexical_cast<int>(e);
-      return mkTerm (mpq_class (-val), e->getFactory());
+      string val = lexical_cast<string>(e);
+      int delim = val.find("/");
+      int val1 = stoi(val.substr(0, delim));
+      int val2 = stoi(val.substr(delim + 1));
+      if (delim < 0) {
+        return mkTerm (mpq_class (-val1), e->getFactory());
+      } else {
+        string inv_val = to_string(-val1) + "/" + to_string(val2);
+        return mkTerm (mpq_class (inv_val), e->getFactory());
+      }
     }
     else if (isOpX<MPZ>(e)){
       int val = lexical_cast<int>(e);
