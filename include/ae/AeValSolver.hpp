@@ -410,13 +410,25 @@ namespace ufo
     void printModelNeg()
     {
       outs () << "(model\n";
-      for (auto &var : sVars)
+      Expr s_witn = s;
+      Expr t_witn = t;
+      for (auto &var : sVars){
+        Expr assnmt = var == modelInvalid[var] ? getDefaultAssignment(var) : modelInvalid[var];
+        if (debug) {
+          s_witn = replaceAll(s_witn, var, assnmt);
+          t_witn = replaceAll(t_witn, var, assnmt);
+        }
+
         outs () << "  (define-fun " << *var << " () " <<
           (bind::isBoolConst(var) ? "Bool" : (bind::isIntConst(var) ? "Int" : "Real"))
-            << "\n    " <<
-              (var == modelInvalid[var] ? *getDefaultAssignment(var) : *modelInvalid[var]) << ")\n";
-
+                << "\n    " << *assnmt << ")\n";
+      }
       outs () << ")\n";
+
+      if (debug){
+        outs () << "Sanity check [model, S-part]: " << !(u.isSat(mk<NEG>(s_witn))) << "\n";
+        outs () << "Sanity check [model, T-part]: " << !(u.isSat(t_witn)) << "\n";
+      }
     }
 
     /**
