@@ -718,6 +718,11 @@ namespace ufo
           return getPlusConst (curMax, isInt, 1);
         }
 
+        if (conjLT.size() == 0 && conjGT.size() == 0) {
+          GetSymbolicMax(conjNEG, curMax, isInt);
+          return getPlusConst (curMax, isInt, 1);
+        }
+
         // now, both conjLT and conjGT are non-empty
         Expr curMid;
         GetSymbolicNeg(conjNEG, curMax, curMin, curMid, isInt);
