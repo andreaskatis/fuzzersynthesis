@@ -565,7 +565,7 @@ namespace ufo
               } else
                 
                 if (mkTerm (mpz_class (-1), a->getFactory()) == b) {
-                  ret = simplifiedPlus(a, mkTerm (mpz_class (1), a->getFactory()));
+                  ret = mk<PLUS>(a, mkTerm (mpz_class (1), a->getFactory()));
                 } else
                   
                   if (b == mkTerm (mpz_class (0), a->getFactory())) {
