@@ -805,7 +805,7 @@ namespace ufo
   /**
    * Simple wrapper
    */
-  inline void aeSolveAndSkolemize(Expr s, Expr t)
+  inline void aeSolveAndSkolemize(Expr s, Expr t, bool skol=true)
   {
     ExprSet s_vars;
     ExprSet t_vars;
@@ -821,18 +821,18 @@ namespace ufo
     outs() << *t << "\n";
     
     AeValSolver ae(s, t, t_quantified);
-    
-    Expr res;
+
     if (ae.solve()){
       ae.printModelNeg();
-      res = ae.getValidSubset();
       outs() << "\nvalid subset:\n";
+      ae.serialize_formula(ae.getValidSubset());
     } else {
-      res = ae.getSimpleSkolemFunction();
-      outs() << "\nextracted skolem:\n";
+      if (skol)
+      {
+        outs() << "\nextracted skolem:\n";
+        ae.serialize_formula(ae.getSimpleSkolemFunction());
+      }
     }
-    
-    ae.serialize_formula(res);
   };
 }
 
