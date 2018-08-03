@@ -760,9 +760,9 @@ namespace expr
     static inline void print (std::ostream &OS, const mpz_class &v, 
 			      int depth, bool brkt)
     {
-      /* print large numbers in hex */
+      /* print large numbers in hex
       if (v >= 65535 || v <= -65535)
-        OS << std::hex << std::showbase;
+        OS << std::hex << std::showbase; */
       
       OS << v;
       
@@ -2711,6 +2711,23 @@ namespace expr
       { return exp == s ? VisitAction::changeTo (t) : VisitAction::doKids (); }
     };
 
+    struct RAVALL: public std::unary_function<Expr,VisitAction>
+    {
+      ExprVector* s;
+      ExprVector* t;
+      unsigned int sz;
+
+      RAVALL (ExprVector* _s, ExprVector* _t) : s(_s), t(_t), sz(_s->size()) { }
+      VisitAction operator() (Expr exp) const
+      {
+        // TODO: could be optimized further,
+        // e.g., when all elements of s and t have the same type...
+        for (unsigned int i = 0; i < sz; i++ )
+          if (exp == s->at(i)) return VisitAction::changeTo (t->at(i));
+        return VisitAction::doKids ();
+      }
+    };
+
     struct RAVSIMP: public std::unary_function<Expr,VisitAction>
     {
       Expr s;
@@ -2829,6 +2846,24 @@ namespace expr
       }
     };
 
+    template <typename T>
+    struct ContainsOp : public std::unary_function<Expr,VisitAction>
+    {
+      bool found;
+
+      ContainsOp<T> () : found(false) {}
+
+      VisitAction operator() (Expr exp)
+      {
+        if (found || isOpX<T>(exp))
+        {
+          found = true;
+          return VisitAction::skipKids ();
+        }
+        return VisitAction::doKids ();
+      }
+    };
+
     struct SIZE : public std::unary_function<Expr,VisitAction>
     {
       size_t count;
@@ -2893,6 +2928,14 @@ namespace expr
   inline Expr replaceAll (Expr exp, Expr s, Expr t)
   {
     RAV rav(s,t);
+    return dagVisit (rav, exp);
+  }
+
+  // pairwise replacing
+  inline Expr replaceAll (Expr exp, ExprVector& s, ExprVector& t)
+  {
+    assert(s.size() == t.size());
+    RAVALL rav(&s, &t);
     return dagVisit (rav, exp);
   }
 
@@ -2983,8 +3026,15 @@ namespace expr
     CV cv(e2);
     dagVisit (cv, e1);
     return cv.found;
-  }  
+  }
 
+  /** Returns true if e1 contains applications of T */
+  template <typename M> inline bool containsOp (Expr e1)
+  {
+    ContainsOp<M> co;
+    dagVisit (co, e1);
+    return co.found;
+  }
 
   namespace op
   {
