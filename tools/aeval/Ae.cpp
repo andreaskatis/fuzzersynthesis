@@ -9,6 +9,7 @@ using namespace ufo;
  *   <s_part.smt2> = S-part (over x)
  *   <t_part.smt2> = T-part (over x, y)
  *   --skol = to print skolem function
+ *   --debug = to print more info and perform sanity checks
  *
  * Notably, the tool automatically recognizes x and y based on their appearances in S or T.
  *
@@ -60,6 +61,7 @@ int main (int argc, char ** argv)
 
   aeSolveAndSkolemize(z3_from_smtlib_file (z3, getSmtFileName(1, argc, argv)),
                       z3_from_smtlib_file (z3, getSmtFileName(2, argc, argv)),
+                      getBoolValue("--debug", false, argc, argv),
                       getBoolValue("--skol", false, argc, argv));
 
   return 0;

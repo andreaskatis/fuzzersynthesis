@@ -14,57 +14,127 @@ namespace ufo
   
   class AeValSolver {
   private:
-    
+
     Expr s;
     Expr t;
     ExprSet v; // existentially quantified vars
     ExprVector sVars;
     ExprVector stVars;
-    
+
     ExprSet tConjs;
     ExprSet usedConjs;
     ExprMap defMap;
-    ExprSet conflictVars;
+    ExprMap cyclicDefs;
     ExprMap modelInvalid;
-    
+
     ExprFactory &efac;
     EZ3 z3;
     ZSolver<EZ3> smt;
     SMTUtils u;
-    
+
     unsigned partitioning_size;
     ExprVector projections;
     ExprVector instantiations;
-    ExprVector interpolants;
     vector<ExprMap> skolMaps;
     vector<ExprMap> someEvals;
     Expr skolSkope;
-    Expr tmpConstraints;
-    
+
+    bool skol;
     bool debug;
     unsigned fresh_var_ind;
-    
+
   public:
-    
-    AeValSolver (Expr _s, Expr _t, ExprSet &_v) :
-    s(_s), t(_t), v(_v),
-    efac(s->getFactory()),
-    z3(efac),
-    smt (z3),
-    u(efac),
-    fresh_var_ind(0),
-    partitioning_size(0),
-    debug(0)
+
+    AeValSolver (Expr _s, Expr _t, ExprSet &_v, bool _debug, bool _skol) :
+      s(_s), t(_t), v(_v),
+      efac(s->getFactory()),
+      z3(efac),
+      smt (z3),
+      u(efac),
+      fresh_var_ind(0),
+      partitioning_size(0),
+      skol(_skol),
+      debug(_debug)
     {
       filter (s, bind::IsConst (), back_inserter (sVars));
       filter (boolop::land(s,t), bind::IsConst (), back_inserter (stVars));
       getConj(t, tConjs);
+
       for (auto &exp: v) {
+        if (!bind::isBoolConst(exp)) continue;
+        Expr definition = getBoolDefinitionFormulaFromT(exp);
+        if (definition != NULL) defMap[exp] = u.simplifyITE(definition);
+      }
+
+      for (auto &exp: v) {
+        if (defMap[exp] != NULL) continue;
         Expr definition = getDefinitionFormulaFromT(exp);
         if (definition != NULL) defMap[exp] = u.simplifyITE(definition);
       }
+
+      splitDefs(defMap, cyclicDefs);
+      skolSkope = mk<TRUE>(efac);
     }
-    
+
+    void splitDefs (ExprMap &m1, ExprMap &m2, int curCnt = 0)
+    {
+      ExprMap m3;
+      ExprMap m4;
+      for (auto & a : m1)
+      {
+        if (a.second == NULL) continue;
+        if (emptyIntersect(a.second, v))
+        {
+          m3.insert(a);
+        }
+        else
+        {
+          m4.insert(a);
+        }
+      }
+      if (m3.size() == curCnt)
+      {
+        m2 = m4;
+        return;
+      }
+
+      for (auto & a : m3)
+      {
+        for (auto & b : m1)
+        {
+          if (b.second == NULL) continue;
+          if (a.first != b.first)
+          {
+            b.second = replaceAll(b.second, a.first, a.second);
+          }
+        }
+      }
+      splitDefs(m1, m2, m3.size());
+    }
+
+    void assignValues (ExprMap& m, ExprMap& reservedAssignment)
+    {
+      for (auto & exp : m)
+      {
+        if (bind::isBoolConst(exp.first) ||
+            bind::isIntConst(exp.first) ||
+            bind::isRealConst(exp.first))
+        {
+          if (find(v.begin(),v.end(), exp.second) != v.end())
+          {
+            if (exp.first == m[exp.second])
+            {
+              Expr def = reservedAssignment[exp.first];
+              if (def != NULL)
+                exp.second = reservedAssignment[exp.first]->right();
+              else
+                exp.second = getDefaultAssignment(exp.first);
+            }
+          }
+        }
+      }
+    }
+
     /**
      * Decide validity of \forall s => \exists v . t
      */
@@ -91,15 +161,14 @@ namespace ufo
         outs() << "\nE.v.: 0; Iter.: 0; Result: " << (res? "invalid" : "valid") << "\n\n";
         return res;
       }
-      
+
       smt.push ();
       smt.assertExpr (t);
-      
+
       boost::tribool res = true;
-      
+
       while (smt.solve ())
       {
-        outs() << ".";
         outs().flush ();
 
         ZSolver<EZ3>::Model m = smt.getModel();
@@ -115,10 +184,10 @@ namespace ufo
           outs() <<"\n";
         }
 
-        getMBPandSkolem(m);
+        getMBPandSkolem(m, t, v, ExprMap());
 
         smt.pop();
-        smt.assertExpr(boolop::lneg(projections[partitioning_size++]));
+        smt.assertExpr(boolop::lneg(projections.back()));
         if (!smt.solve()) {
           res = false; break;
         } else {
@@ -131,26 +200,26 @@ namespace ufo
         smt.push();
         smt.assertExpr (t);
       }
-      
+
       outs() << "\nE.v.: " << v.size() << "; Iter.: " << partitioning_size
              << "; Result: " << (res? "invalid" : "valid") << "\n\n";
-      
+
       return res;
     }
-    
+
     /**
      * Extract MBP and local Skolem
      */
-    void getMBPandSkolem(ZSolver<EZ3>::Model &m)
+    void getMBPandSkolem(ZSolver<EZ3>::Model &m, Expr pr, ExprSet tmpVars, ExprMap substsMap)
     {
-      Expr pr = t;
-      ExprMap substsMap;
       ExprMap modelMap;
-      for (auto &exp: v)
+      for (auto exp = tmpVars.begin(); exp != tmpVars.end();)
       {
         ExprMap map;
-        pr = z3_qe_model_project_skolem (z3, m, exp, pr, map);
-        getLocalSkolems(m, exp, map, substsMap, modelMap, pr);
+        pr = z3_qe_model_project_skolem (z3, m, *exp, pr, map);
+        if (skol) getLocalSkolems(m, *exp, map, substsMap, modelMap, pr);
+        Expr var = *exp;
+        tmpVars.erase(exp++);
       }
 
       if (debug) assert(emptyIntersect(pr, v));
@@ -158,144 +227,137 @@ namespace ufo
       someEvals.push_back(modelMap);
       skolMaps.push_back(substsMap);
       projections.push_back(pr);
+      partitioning_size++;
     }
-    
+
+    void fillSubsts (Expr ef, Expr es, Expr mbp, ExprSet& substs)
+    {
+      if (debug) outs() << "  subst: " << *ef << "  <-->  " << *es << "\n";
+
+      if (!sameBoolOrCmp(ef, es))
+      {
+        substs.insert(mk<EQ>(ineqNegReverter(ef), ineqNegReverter(es)));
+      }
+      else if (isOpX<FALSE>(es))
+      {
+        // useless (just for optim)
+      }
+      else if (isOpX<TRUE>(es) || u.implies(mbp, es))
+      {
+        substs.insert(ineqNegReverter(ef));
+      }
+    }
+
     /**
      * Compute local skolems based on the model
      */
     void getLocalSkolems(ZSolver<EZ3>::Model &m, Expr exp,
-                         ExprMap &map, ExprMap &substsMap, ExprMap &modelMap, Expr& mbp)
+                           ExprMap &map, ExprMap &substsMap, ExprMap &modelMap, Expr& mbp)
     {
       if (map.size() > 0){
         ExprSet substs;
-        for (auto &e: map){
-          Expr ef = e.first;
-          Expr es = e.second;
-
-          if (debug) outs() << "subst: " << *ef << "  <-->  " << *es << "\n";
-
-          if (isOpX<TRUE>(es)){
-            substs.insert(ineqNegReverter(ef));
-          } else if (isOpX<FALSE>(es)){
-            if (isOpX<NEG>(ef)){
-              ef = ef->arg(0);
-            } else {
-              ef = ineqNegReverter(mk<NEG>(ef));
-            }
-            substs.insert(ef);
-          } else if (es == mbp) {
-            substs.insert(ineqNegReverter(ef));
-          } else if (!(isOp<BoolOp>(ef) && isOp<BoolOp>(es)) &&
-                     !(isOp<ComparissonOp>(ef) && isOp<ComparissonOp>(es)) &&
-                     !(isOp<BoolOp>(ef) && isOp<ComparissonOp>(es)) &&
-                     !(isOp<ComparissonOp>(ef) && isOp<BoolOp>(es))){
-            substs.insert(mk<EQ>(ineqNegReverter(ef), ineqNegReverter(es)));
-          } else {
-            Expr mergedSides = mergeIneqs(ef, es);
-            if (mergedSides != NULL) {
-              substs.insert(mergedSides);
-            }
-          }
+        for (auto &e: map) fillSubsts(e.first, e.second, mbp, substs);
+        if (substs.size() == 0)
+        {
+          if (debug) outs() << "WARNING: subst is empty for " << *exp << "\n";
         }
-        if (substs.size() == 0) outs() << "WARNING: subst is empty for " << *exp << "\n";
-        substsMap[exp] = conjoin(substs, efac);
-
-      } else if (m.eval(exp) != exp){
+        else
+        {
+          substsMap[exp] = conjoin(substs, efac);
+        }
+      }
+      if (m.eval(exp) != exp){
         if (debug) outs () << "model: " << *exp <<  "  <-->  " << *m.eval(exp) << "\n";
         modelMap[exp] = mk<EQ>(exp, m.eval(exp));
       }
     }
-    
-    /**
-     * tmp
-     */
-    
-    void fillTmpDef(ExprMap& eval, bool pos, Expr def, ExprMap& tmpDefMap){
 
-      if (isOpX<EQ>(def)){
+    bool sameBoolOrCmp (Expr ef, Expr es)
+    {
+      return (isOp<BoolOp>(ef) && isOp<BoolOp>(es)) ||
+         (isOp<ComparissonOp>(ef) && isOp<ComparissonOp>(es)) ||
+         (isOp<BoolOp>(ef) && isOp<ComparissonOp>(es)) ||
+         (isOp<ComparissonOp>(ef) && isOp<BoolOp>(es));
+    }
 
-        Expr l = def->left();
-        Expr r = def->right();
+    Expr getFinalAssignment (int i, Expr var, Expr& tmpSkol)
+    {
+      Expr assgn = defMap[var];
+      if (assgn != NULL) return assgn;
 
-        bool hl = find(std::begin(v), std::end (v), l) != std::end(v);
-        bool hr = find(std::begin(v), std::end (v), r) != std::end(v);
+      assgn = skolMaps[i][var];
+      if (assgn != NULL)
+        return getAssignmentForVar(var, assgn);
 
-        if (pos){
+      ExprSet pre;
+      pre.insert(tmpSkol);
+      pre.insert(skolSkope);
+      pre.insert(t);
+      assgn = getCondDefinitionFormula(var, conjoin(pre, efac), false);
+      if (assgn != NULL)
+        return assgn;
 
-          if (hl && (bind::isBoolConst(l) || bind::isIntConst(l) || bind::isRealConst(l))){
-            tmpDefMap[l] = r;
-          }
-          if (hr && (bind::isBoolConst(r) || bind::isIntConst(r) || bind::isRealConst(r))){
-            tmpDefMap[r] = l;
-          }
-          if (hl && isOpX<NEG>(l) && bind::isBoolConst(l->left())){
-            tmpDefMap[l->left()] = mk<NEG>(r);
-          }
-          if (hr && isOpX<NEG>(r) && bind::isBoolConst(r->left())){
-            tmpDefMap[r->left()] = mk<NEG>(l);
-          }
+      Expr eval = someEvals[i][var];
+      if (eval != NULL)
+        return eval->right();
 
-        } else {
+      return getDefaultAssignment(var);
+    }
 
-          if (hl && bind::isBoolConst(l)){
-            tmpDefMap[l] = mk<NEG>(r);
-          }
-          if (hr && bind::isBoolConst(r)){
-            tmpDefMap[r] = mk<NEG>(l);
-          }
-          if (hl && isOpX<NEG>(l) && bind::isBoolConst(l->left())){
-            tmpDefMap[l->left()] = r;
-          }
-          if (hr && isOpX<NEG>(r) && bind::isBoolConst(r->left())){
-            tmpDefMap[r->left()] = l;
-          }
-        }
+    void getCurrentLocalSkolem (int i)
+    {
+      ExprMap substsMap;
+      Expr tmpSkol = mk<TRUE>(efac); // needed only to get conditionals
 
-      } else if (isOpX<NEQ>(def)){
+      // first, synthesize skolems from pieces determined by syntax or the MBP process
+      for (auto &var: v)
+      {
+        if (skolMaps[i][var] == NULL && defMap[var] == NULL) continue;
 
-        if (pos) fillTmpDef(eval, !pos, mk<EQ>(def->left(), def->right()), tmpDefMap);
-
-      } else if (isOpX<NEG>(def)){
-
-        if (pos) fillTmpDef(eval, !pos, def->left(), tmpDefMap);
-
-      } else if (isOpX<ITE>(def)){
-
-        fillTmpDef(eval, pos, mk<IMPL>(def->arg(0), def->arg(1)), tmpDefMap);
-        fillTmpDef(eval, pos, mk<IMPL>(mk<NEG>(def->arg(0)), def->arg(2)), tmpDefMap);
-
-      } else if (isOpX<IMPL>(def)){
-
-        if (pos) fillTmpDef(eval, pos, mk<OR>(mk<NEG>(def->left()), def->right()), tmpDefMap);
-
-      } else if (isOpX<AND>(def)){
-
-        ExprSet cnjs;
-        getConj(def, cnjs);
-
-        ExprSet newCnjs;
-        for (auto &a : cnjs) {
-          if (!u.isSat(mk<AND>(mk<NEG> (a), tmpConstraints))) newCnjs.insert(a);
-        }
-
-        if (!pos && newCnjs.size() == 1) fillTmpDef (eval, pos, *newCnjs.begin(), tmpDefMap);
-        else if (pos) for (auto &c : cnjs) fillTmpDef (eval, pos, c, tmpDefMap);
-
-      } else if (isOpX<OR>(def)){
-
-        ExprSet dsjs;
-        getDisj(def, dsjs);
-
-        ExprSet newDsjs;
-        for (auto &a : dsjs) {
-          if (u.isSat(mk<AND>(a, tmpConstraints))) newDsjs.insert(a);
-        }
-
-        if (pos && newDsjs.size() == 1) fillTmpDef (eval, pos, *newDsjs.begin(), tmpDefMap);
-        else if (!pos) for (auto &c : newDsjs) fillTmpDef (eval, pos, c, tmpDefMap);
+        Expr val = getFinalAssignment (i, var, tmpSkol);
+        tmpSkol = mk<AND>(tmpSkol, mk<EQ>(var, val));
+        substsMap[var] = val;
       }
-      else {
-        if (debug) outs() << "WARNING! unsupported: " << *def << "\n";
+
+      // then, synthesize the rest
+      for (auto &var: v)
+      {
+        if (substsMap[var] != NULL) continue;
+
+        Expr val = getFinalAssignment (i, var, tmpSkol);
+        tmpSkol = mk<AND>(tmpSkol, mk<EQ>(var, val));
+        substsMap[var] = val;
+      }
+
+      // get rid of inter-dependencies cascadically:
+
+      ExprVector cnjs;
+      ExprMap cyclicSubsts;
+      assignValues(substsMap, someEvals[i]);
+      splitDefs(substsMap, cyclicSubsts);
+      for (auto & a : cyclicSubsts)
+        substsMap[a.first] = someEvals[i][a.first]->right();
+
+      for (auto &var: v)
+      {
+        if (substsMap[var] != NULL)
+        {
+          assert(emptyIntersect(substsMap[var], v));
+          cnjs.push_back(mk<EQ>(var, substsMap[var]));
+          if (debug) outs() << "\ncompiling skolem [pt1]: " << *var <<  "    -->   " << *substsMap[var] << "\n";
+        }
+        else
+        {
+          assert(0);
+        }
+      }
+
+      instantiations.push_back(conjoin(cnjs, efac));
+
+      if (debug)
+      {
+        outs() << "Sanity check [" << i << "]: " << u.implies(mk<AND>
+                  (mk<AND>(s, skolSkope), mk<AND> (projections[i], instantiations[i])), t) << "\n";
       }
     }
 
@@ -304,95 +366,36 @@ namespace ufo
      */
     Expr getSimpleSkolemFunction()
     {
-      if (partitioning_size == 0){
-        outs() << "WARNING: Skolem can be arbitrary\n";
+      assert(skol);
+
+      if (partitioning_size == 0)
+      {
+        if (debug) outs() << "WARNING: Skolem can be arbitrary\n";
         return mk<TRUE>(efac);
       }
-      
-      skolSkope = mk<TRUE>(efac);
-      
+
       for (int i = 0; i < partitioning_size; i++)
       {
-        ExprSet skoledvars;
-        ExprMap substsMap;
-        ExprMap tmpDefMap;
-        ExprMap useEvalMap;
-
-        ExprSet acs;
-        for (auto &exp: v) {
-          Expr exp2 = skolMaps[i][exp];
-          if (exp2 != NULL) acs.insert(exp2);
-        }
-
-        tmpConstraints = conjoin(acs, efac);
-
-        // do booleans first
-        for (auto &exp: v) {
-          if (!bind::isBoolConst(exp)) continue;
-
-          int curSz = tmpDefMap.size();
-          Expr exp2 = someEvals[i][exp];
-
-          if (defMap[exp] != NULL && exp2 != NULL) {
-
-            Expr def = defMap[exp];
-
-            if (isOpX<TRUE>(exp2->right())) {
-              fillTmpDef(someEvals[i], true, def, tmpDefMap);
-            } else if (isOpX<FALSE>(exp2->right())) {
-              fillTmpDef(someEvals[i], false, def, tmpDefMap);
-            }
-          }
-
-          if (tmpDefMap.size() > curSz) useEvalMap[exp] = exp2->right();
-        }
-
-        for (auto &exp: v) {
-
-          Expr exp2 = skolMaps[i][exp];
-          if (exp2 != NULL) { exp2 = getAssignmentForVar(exp, exp2); }
-          if (exp2 == NULL) { exp2 = useEvalMap[exp]; }
-          if (exp2 == NULL) { exp2 = tmpDefMap[exp]; }
-          if (exp2 == NULL) { exp2 = defMap[exp]; }
-
-          Expr exp3 = someEvals[i][exp];
-          if (exp2 == NULL && exp3 != NULL) { exp2 = exp3->right(); }
-          if (exp2 == NULL) { exp2 = getDefaultAssignment(exp); }
-
-          if (debug) outs() << "compiling skolem [pt1]: " << *exp <<  "    -->   " << *exp2 << "\n";
-
-          substsMap[exp] = exp2;
-        }
-
-        // get rid of inter-dependencies cascadically:
-
-        ExprVector cnjs;
-
-        for (auto &exp: v) {
-          refreshMapEntry(substsMap, exp);
-          cnjs.push_back(mk<EQ>(exp, substsMap[exp]));
-        }
-
-        instantiations.push_back(conjoin(cnjs, efac));
-
-        if (debug) outs() << "Sanity check [" << i << "]: " << u.isImplies(mk<AND>
-              (mk<AND>(s, skolSkope), mk<AND> (projections[i], instantiations[i])), t) << "\n";
-
+        getCurrentLocalSkolem(i);
       }
+
       Expr sk = mk<TRUE>(efac);
-      
-      for (int i = partitioning_size - 1; i >= 0; i--){
-        if (isOpX<TRUE>(projections[i]) && isOpX<TRUE>(sk)) sk = instantiations[i];
-        else sk = mk<ITE>(projections[i], instantiations[i], sk);
+
+      for (int i = partitioning_size - 1; i >= 0; i--)
+      {
+        if (isOpX<TRUE>(projections[i]) && isOpX<TRUE>(sk))
+          sk = instantiations[i];
+        else
+          sk = mk<ITE>(projections[i], instantiations[i], sk);
       }
-      
+
       Expr skol = simplifiedAnd(skolSkope, sk);
-      
-      if (debug) outs() << "Sanity check: " << u.isImplies(mk<AND>(s, skol), t) << "\n";
-      
+
+      if (debug) outs() << "Sanity check: " << u.implies(mk<AND>(s, skol), t) << "\n";
+
       return skol;
     }
-    
+
     /**
      * Valid Subset of S (if overall AE-formula is invalid)
      */
@@ -403,7 +406,7 @@ namespace ufo
       }
       return mk<AND>(s, disjoin(projections, efac));
     }
-    
+
     /**
      * Model of S /\ \neg T (if AE-formula is invalid)
      */
@@ -436,7 +439,7 @@ namespace ufo
      */
     Expr getDefinitionFormulaFromT(Expr var)
     {
-      Expr def;
+      ExprSet defs;
       for (auto & cnj : tConjs)
       {
         // get equality (unique per variable)
@@ -445,23 +448,116 @@ namespace ufo
 
         if (isOpX<EQ>(cnj))
         {
-          if (var == cnj->left())
+          if (var == cnj->left() || var == cnj->right())
           {
-            def = cnj->right();
-            usedConjs.insert(cnj);
-            break;
-          }
-          else if (var == cnj->right())
-          {
-            def = cnj->left();
-            usedConjs.insert(cnj);
-            break;
+            defs.insert(cnj);
           }
         }
       }
+
+      // now find `the best` one
+
+      if (defs.empty()) return NULL;
+
+      Expr def = *defs.begin();
+      for (auto & a : defs)
+      {
+        if (!emptyIntersect(a, sVars)) def = a;
+      }
+
+      usedConjs.insert(def);
+      return (var == def->left() ? def->right() : def->left());
+    }
+
+    /**
+     * Mine the structure of T to get what was assigned to a variable
+     */
+    Expr getBoolDefinitionFormulaFromT(Expr var)
+    {
+      Expr def;
+      for (auto & cnj : tConjs)
+      {
+        if (std::find(std::begin(usedConjs),
+                      std::end  (usedConjs), cnj) != std::end(usedConjs)) continue;
+
+        if (bind::isBoolConst(cnj) && var == cnj)
+        {
+          def = mk<TRUE>(efac);
+          usedConjs.insert(cnj);
+        }
+        else if (isOpX<NEG>(cnj) && bind::isBoolConst(cnj->left()) && var == cnj->left())
+        {
+          def = mk<FALSE>(efac);
+          usedConjs.insert(cnj);
+        }
+      }
+
+      if (def != NULL) extendTWithDefs(var, def);
       return def;
     }
-    
+
+    void extendTWithDefs(Expr var, Expr def)
+    {
+      for (auto & cnj : tConjs)
+      {
+        if (std::find(std::begin(usedConjs),
+                      std::end  (usedConjs), cnj) != std::end(usedConjs)) continue;
+
+        if (isOpX<EQ>(cnj))
+        {
+          if (var == cnj->left())
+          {
+            usedConjs.insert(cnj);
+            if (def == NULL)
+            {
+              def = cnj->right();
+              break;
+            }
+            else
+            {
+              getConj(isOpX<TRUE>(def) ? cnj->right() : mk<NEG> (cnj->right()), tConjs);
+            }
+          }
+          else if (var == cnj->right())
+          {
+            usedConjs.insert(cnj);
+            if (def == NULL)
+            {
+              def = cnj->left();
+              break;
+            }
+            else
+            {
+              getConj(isOpX<TRUE>(def) ? cnj->left() : mk<NEG> (cnj->left()), tConjs);
+            }
+          }
+
+          if (debug && tConjs.empty())
+            outs () << "WARNING: getBoolDefinitionFormulaFromT has cleared tConjs\n";
+        }
+      }
+    }
+
+    /**
+     * Mine the structure of T `conditionally`
+     */
+    Expr getCondDefinitionFormula(Expr var, Expr pre, bool impl)
+    {
+      Expr res = NULL;
+      ExprSet eqs;
+      ExprSet eqsFilt;
+      getEqualities(t, var, eqs);
+      for (auto a : eqs)
+      {
+        if (a->right() != a->left() && u.implies(pre, a))
+          eqsFilt.insert((a->left() == var) ? a->right() : a->left());
+      }
+
+      int maxSz = 0;
+      for (auto & a : eqsFilt) if (boolop::circSize(a) > maxSz) res = a;
+      return res;
+    }
+
     /**
      * Self explanatory
      */
@@ -480,13 +576,14 @@ namespace ufo
           Expr varName = mkTerm ("_aeval_tmp_max_" + ind, efac);
           Expr var = isInt ? bind::intConst(varName) : bind::realConst(varName);
 
-          skolSkope = simplifiedAnd(skolSkope,
-                                    mk<EQ>(var, mk<ITE>(mk<LT>(curMax, a), a, curMax)));
+          Expr newConstr = mk<EQ>(var, mk<ITE>(mk<LT>(curMax, a), a, curMax));
+          skolSkope = simplifiedAnd(skolSkope, newConstr);
+
           curMax = var;
         }
       }
     }
-    
+
     /**
      * Self explanatory
      */
@@ -505,49 +602,46 @@ namespace ufo
           Expr varName = mkTerm ("_aeval_tmp_min_" + ind, efac);
           Expr var = isInt ? bind::intConst(varName) : bind::realConst(varName);
 
-          skolSkope = simplifiedAnd(skolSkope,
-                                    mk<EQ>(var, mk<ITE>(mk<GT>(curMin, a), a, curMin)));
+          Expr newConstr = mk<EQ>(var, mk<ITE>(mk<GT>(curMin, a), a, curMin));
+          skolSkope = simplifiedAnd(skolSkope, newConstr);
           curMin = var;
         }
       }
     }
-    
-    /**
-     * Weird thing, never happens in the experiments
-     */
-    void GetSymbolicNeg(ExprSet& vec, Expr& lower, Expr& upper, Expr& candidate, bool isInt)
+
+    void GetSymbolicNeq(ExprSet& vec, Expr& lower, Expr& upper, Expr& candidate, bool strict, bool isInt)
     {
-      // TODO: maybe buggy in LIA, due to a naive shrinking of the segment;
-      
-      for (auto &a : vec){
+      Expr var1 = lower;
+      Expr eps;
+      if (isInt)
+        eps = mkTerm (mpz_class (1), efac);
+      else
+        eps = mk<DIV>(mk<MINUS>(upper, lower), mkTerm (mpq_class (vec.size() + 2), efac));
 
-        ExprSet forLower;
-        forLower.insert(lower);
-        forLower.insert(a);
-        Expr updLower;
-        GetSymbolicMax(forLower, updLower, isInt);
+      if (strict) var1 = mk<PLUS>(var1, eps);
 
-        ExprSet forUpper;
-        forUpper.insert(upper);
-        forUpper.insert(a);
-        Expr updUpper;
-        GetSymbolicMin(forUpper, updUpper, isInt);
+      string ind = lexical_cast<string> (fresh_var_ind++);
+      Expr varName = mkTerm ("_aeval_tmp_neg_" + ind, efac);
+      Expr var2 = isInt ? bind::intConst(varName) : bind::realConst(varName);
 
-        // TODO: do optimizations
+      candidate = var2;
+      for (int i = 0; i <= vec.size(); i++)
+      {
+        ExprSet neqqedConstrs;
+        for (auto &a : vec) neqqedConstrs.insert(mk<EQ>(a, var1));
 
-        // first, try to see if there are any concrete values for updLower and updUpper
-        if (updLower == updUpper) {
-          upper = updUpper;
-        }
-        else if (upper != updUpper) {
-          // second, force the symbolic value for upper
-          upper = mk<ITE> (mk<EQ>(updLower, updUpper), updUpper, upper);
-        }
+        string ind = lexical_cast<string> (fresh_var_ind++);
+        Expr varName = mkTerm ("_aeval_tmp_neg_" + ind, efac);
+        Expr newVar = isInt ? bind::intConst(varName) : bind::realConst(varName);
 
-        candidate = mk<DIV>(mk<PLUS>(lower, upper), mkTerm (mpz_class (2), efac));
+        Expr newConstr = mk<EQ>(var2, mk<ITE>(disjoin(neqqedConstrs, efac), newVar, var1));
+        skolSkope = simplifiedAnd(skolSkope, newConstr);
+
+        var1 = mk<PLUS>(var1, eps);
+        var2 = newVar;
       }
     }
-    
+
     /**
      * Based on type
      */
@@ -558,30 +652,41 @@ namespace ufo
       else           // that is, isRealConst(var) == true
         return mkTerm (mpq_class (0), efac);
     }
-    
+
     /**
-     * Return "e + c"
+     * Return "e + eps"
      */
-    Expr getPlusConst(Expr e, bool isInt, int c)
+    Expr plusEps(Expr e, bool isInt)
     {
       if (isOpX<MPZ>(e) && isInt)
-        return  mkTerm (mpz_class (c + boost::lexical_cast<int> (e)), efac);
-      
-      Expr ce = isInt ? mkTerm (mpz_class (c), efac) : mkTerm (mpq_class (c), efac);
-      return mk<PLUS>(e, ce);
+        return mkTerm (mpz_class (boost::lexical_cast<int> (e) + 1), efac);
+
+      return mk<PLUS>(e, mkTerm ((isInt ? mpz_class (1) : mpq_class (1)), efac));
     }
-    
+
+    /**
+     * Return "e - eps"
+     */
+    Expr minusEps(Expr e, bool isInt)
+    {
+      if (isOpX<MPZ>(e) && isInt)
+        return mkTerm (mpz_class (boost::lexical_cast<int> (e) - 1), efac);
+
+      return mk<MINUS>(e, mkTerm ((isInt ? mpz_class (1) : mpq_class (1)), efac));
+    }
+
     /**
      * Extract function from relation
      */
     Expr getAssignmentForVar(Expr var, Expr exp)
     {
-      if (debug) outs () << "getAssignmentForVar " << *var << " in " << *exp << "\n";
-      
+      if (debug) outs () << "getAssignmentForVar " << *var << " in:\n" << *exp << "\n";
+
       bool isInt = bind::isIntConst(var);
-      
+
       if (isOp<ComparissonOp>(exp))
       {
+        if (isOpX<NEG>(exp)) exp = mkNeg(exp->left());
 
         if (!bind::isBoolConst(var) && var != exp->left())
           exp = ineqReverter(ineqMover(exp, var));
@@ -594,25 +699,25 @@ namespace ufo
           return exp->right();
         }
         else if (isOpX<LT>(exp)){
-          return getPlusConst (exp->right(), isInt, -1);
+          return minusEps (exp->right(), isInt);
         }
         else if (isOpX<GT>(exp)){
-          return getPlusConst (exp->right(), isInt, 1);
+          return plusEps (exp->right(), isInt);
         }
         else if (isOpX<NEQ>(exp)){
-          return getPlusConst (exp->right(), isInt, 1);
+          return plusEps (exp->right(), isInt);
         }
         else assert(0);
       }
       else if (isOpX<NEG>(exp)){
         if (isOpX<EQ>(exp->left())) {
-          return getPlusConst (getAssignmentForVar(var, exp->left()), isInt, 1);
+          return plusEps (getAssignmentForVar(var, exp->left()), isInt);
         }
       }
-      else if (isOpX<AND>(exp)){
+      else if (isOpX<AND>(exp))
+      {
 
         exp = u.numericUnderapprox(exp); // try to see if there are only numerals
-
         if (isOpX<EQ>(exp)) return exp->right();
 
         bool incomplete = false;
@@ -620,27 +725,28 @@ namespace ufo
         // split constraints
 
         ExprSet conjLT;
+        ExprSet conjLE;
         ExprSet conjGT;
-        ExprSet conjNEG;
-        ExprSet conjEG;
-        for (auto it = exp->args_begin(), end = exp->args_end(); it != end; ++it){
-          Expr cnj = *it;
+        ExprSet conjGE;
+        ExprSet conjNEQ;
+        ExprSet conjEQ;
+        ExprSet cnjs;
+        getConj (exp, cnjs);
+        u.removeRedundantConjuncts(cnjs);
 
-          // GF: little hack; TODO: make a proper rewriter
-          if (isOpX<NEG>(cnj) && isOpX<EQ>(cnj->left())) {
-            cnj = mk<NEQ>(cnj->left()->left(), cnj->left()->right());
-          }
-
+        for (auto cnj : cnjs)
+        {
+          if (isOpX<NEG>(cnj)) cnj = mkNeg(cnj->left());
           cnj = ineqReverter(ineqMover(cnj, var));
 
           if (isOpX<EQ>(cnj)){
             if (var == cnj->left()) {
-              conjEG.insert(cnj->right());
+              conjEQ.insert(cnj->right());
             } else {
               incomplete = true;
             }
           }
-          else if (isOpX<LT>(cnj) || isOpX<LEQ>(cnj)){
+          else if (isOpX<LT>(cnj)){
             if (var == cnj->left()) {
               conjLT.insert(cnj->right());
             } else if (var == cnj->right()) {
@@ -649,7 +755,16 @@ namespace ufo
               incomplete = true;
             }
           }
-          else if (isOpX<GT>(cnj) || isOpX<GEQ>(cnj)){
+          else if (isOpX<LEQ>(cnj)){
+            if (var == cnj->left()) {
+              conjLE.insert(cnj->right());
+            } else if (var == cnj->right()) {
+              conjGE.insert(cnj->left());
+            } else {
+              incomplete = true;
+            }
+          }
+          else if (isOpX<GT>(cnj)){
             if (var == cnj->left()) {
               conjGT.insert(cnj->right());
             } else if (var == cnj->right()) {
@@ -657,133 +772,279 @@ namespace ufo
             } else {
               incomplete = true;
             }
-          } else if (isOpX<NEQ>(cnj)){
+          }
+          else if (isOpX<GEQ>(cnj)){
             if (var == cnj->left()) {
-              conjNEG.insert(cnj->right());
+              conjGE.insert(cnj->right());
+            } else if (var == cnj->right()) {
+              conjLE.insert(cnj->left());
             } else {
               incomplete = true;
             }
           }
+          else if (isOpX<NEQ>(cnj)){
+            if (var == cnj->left()) {
+              conjNEQ.insert(cnj->right());
+            } else {
+              incomplete = true;
+            }
+          }
+
+          if (incomplete && debug)
+            outs() << "WARNING: This constraint is unsupported: " << *cnj << "\n";
+        }
+
+        // simplify some:
+        for (auto & b : conjLE)
+        {
+          bool toBrk = false;
+          for (auto & a : conjNEQ)
+          {
+            if (a == b)
+            {
+              conjLT.insert(a);
+              conjNEQ.erase(a);
+              conjLE.erase(b);
+              toBrk = true;
+              break;
+            }
+          }
+          if (toBrk) break;
+        }
+
+        // simplify some:
+        for (auto & b : conjGE)
+        {
+          bool toBrk = false;
+          for (auto & a : conjNEQ)
+          {
+            if (a == b)
+            {
+              conjGT.insert(a);
+              conjNEQ.erase(a);
+              conjGE.erase(b);
+              toBrk = true;
+              break;
+            }
+          }
+          if (toBrk) break;
         }
 
         // get the assignment (if exists)
 
-        if (conjEG.size() > 0) return *(conjEG.begin()); // GF: maybe try to find the best of them
-
-        if (incomplete && debug) outs() << "WARNING: Some Skolem constraints unsupported\n";
+        if (conjEQ.size() > 0) return *(conjEQ.begin()); // GF: maybe try to find the best of them
 
         // get symbolic max and min
 
-        Expr extraDefsMax = mk<TRUE>(efac);
-        Expr curMax;
+        Expr curMaxGT;
         if (conjGT.size() > 1){
-          GetSymbolicMax(conjGT, curMax, isInt);
+          GetSymbolicMax(conjGT, curMaxGT, isInt);
         } else if (conjGT.size() == 1){
-          curMax = *(conjGT.begin());
+          curMaxGT = *(conjGT.begin());
         }
 
-        Expr extraDefsMin = mk<TRUE>(efac);
-        Expr curMin;
+        Expr curMaxGE;
+        if (conjGE.size() > 1){
+          GetSymbolicMax(conjGE, curMaxGE, isInt);
+        } else if (conjGE.size() == 1){
+          curMaxGE = *(conjGE.begin());
+        }
+
+        Expr curMinLT;
         if (conjLT.size() > 1){
-          GetSymbolicMin(conjLT, curMin, isInt);
+          GetSymbolicMin(conjLT, curMinLT, isInt);
         } else if (conjLT.size() == 1){
-          curMin = *(conjLT.begin());
+          curMinLT = *(conjLT.begin());
+        }
+
+        Expr curMinLE;
+        if (conjLE.size() > 1){
+          GetSymbolicMin(conjLE, curMinLE, isInt);
+        } else if (conjLE.size() == 1){
+          curMinLE = *(conjLE.begin());
         }
 
         // get value in the middle of max and min
 
-        if (conjNEG.size() == 0){
-          if (conjLT.size() > 0 && conjGT.size() > 0){
-            return mk<DIV>(mk<PLUS>(curMin, curMax), mkTerm (mpz_class (2), efac));
-          } else {
-            if (conjLT.size() == 0){
-              return getPlusConst (curMax, isInt, 1);
-            } else {
-              return getPlusConst (curMin, isInt, -1);
-            }
+        Expr curMax;
+        Expr curMin;
+
+        if (curMaxGT != NULL && curMaxGE != NULL){
+          curMax = mk<ITE>(mk<GT>(curMaxGT, curMaxGE), curMaxGT, curMaxGE);
+        }
+        else if (curMaxGT != NULL) curMax = curMaxGT;
+        else curMax = curMaxGE;
+
+        if (curMinLT != NULL && curMinLE != NULL){
+          curMin = mk<ITE>(mk<LT>(curMinLT, curMinLE), curMinLT, curMinLE);
+        }
+        else if (curMinLT != NULL) curMin = curMinLT;
+        else curMin = curMinLE;
+
+        if (conjNEQ.size() == 0)
+        {
+          if (curMinLT == NULL && curMinLE != NULL)
+          {
+            return curMinLE;
           }
+
+          if (curMaxGT == NULL && curMaxGE != NULL)
+          {
+            return curMaxGE;
+          }
+
+          if (curMinLT != NULL && curMinLE == NULL && curMaxGT == NULL && curMaxGE == NULL)
+          {
+            return minusEps(curMinLT, isInt);
+          }
+
+          if (curMinLT == NULL && curMinLE == NULL && curMaxGT != NULL && curMaxGE == NULL)
+          {
+            return plusEps(curMaxGT, isInt);
+          }
+
+          if (curMinLT != NULL && curMinLE != NULL && curMaxGT == NULL && curMaxGE == NULL)
+          {
+            return minusEps(curMin, isInt);
+          }
+
+          if (curMinLT == NULL && curMinLE == NULL && curMaxGT != NULL && curMaxGE != NULL)
+          {
+            return plusEps(curMax, isInt);
+          }
+
+          if (curMinLT != NULL && curMinLE == NULL && curMaxGT != NULL && curMaxGE == NULL)
+          {
+            if (isInt)
+              return mk<IDIV>(mk<PLUS>(curMinLT, curMaxGT), mkTerm (mpz_class (2), efac));
+            else
+              return mk<DIV>(mk<PLUS>(curMinLT, curMaxGT), mkTerm (mpq_class (2), efac));
+          }
+
+          if (curMinLT == NULL && curMinLE != NULL && curMaxGT == NULL && curMaxGE != NULL)
+          {
+            if (isInt)
+              return mk<IDIV>(mk<PLUS>(curMinLE, curMaxGE), mkTerm (mpz_class (2), efac));
+            else
+              return mk<DIV>(mk<PLUS>(curMinLE, curMaxGE), mkTerm (mpq_class (2), efac));
+          }
+
+          if (curMinLT == NULL && curMinLE != NULL && curMaxGT != NULL && curMaxGE == NULL)
+          {
+            if (isInt)
+              return mk<IDIV>(mk<PLUS>(curMinLE, curMaxGT), mkTerm (mpz_class (2), efac));
+            else
+              return mk<DIV>(mk<PLUS>(curMinLE, curMaxGT), mkTerm (mpq_class (2), efac));
+          }
+
+          if (curMinLT != NULL && curMinLE == NULL && curMaxGT == NULL && curMaxGE != NULL)
+          {
+            if (isInt)
+              return mk<IDIV>(mk<PLUS>(curMinLT, curMaxGE), mkTerm (mpz_class (2), efac));
+            else
+              return mk<DIV>(mk<PLUS>(curMinLT, curMaxGE), mkTerm (mpq_class (2), efac));
+          }
+
+          if (curMinLT != NULL && curMinLE == NULL && curMaxGT != NULL && curMaxGE != NULL)
+          {
+            if (isInt)
+              return mk<IDIV>(mk<PLUS>(curMinLT, curMax), mkTerm (mpz_class (2), efac));
+            else
+              return mk<DIV>(mk<PLUS>(curMinLT, curMax), mkTerm (mpq_class (2), efac));
+          }
+
+          if (curMinLT == NULL && curMinLE != NULL && curMaxGT != NULL && curMaxGE != NULL)
+          {
+            if (isInt)
+              return mk<IDIV>(mk<PLUS>(curMinLE, curMax), mkTerm (mpz_class (2), efac));
+            else
+              return mk<DIV>(mk<PLUS>(curMinLE, curMax), mkTerm (mpq_class (2), efac));
+          }
+
+          if (curMinLT != NULL && curMinLE != NULL && curMaxGT == NULL && curMaxGE != NULL)
+          {
+            if (isInt)
+              return mk<IDIV>(mk<PLUS>(curMin, curMaxGE), mkTerm (mpz_class (2), efac));
+            else
+              return mk<DIV>(mk<PLUS>(curMin, curMaxGE), mkTerm (mpq_class (2), efac));
+          }
+
+          if (curMinLT != NULL && curMinLE != NULL && curMaxGT != NULL && curMaxGE == NULL)
+          {
+            if (isInt)
+              return mk<IDIV>(mk<PLUS>(curMin, curMaxGT), mkTerm (mpz_class (2), efac));
+            else
+              return mk<DIV>(mk<PLUS>(curMin, curMaxGT), mkTerm (mpq_class (2), efac));
+          }
+
+          if (curMinLT != NULL && curMinLE != NULL && curMaxGT != NULL && curMaxGE != NULL)
+          {
+            if (isInt)
+              return mk<IDIV>(mk<PLUS>(curMin, curMax), mkTerm (mpz_class (2), efac));
+            else
+              return mk<DIV>(mk<PLUS>(curMin, curMax), mkTerm (mpq_class (2), efac));
+          }
+          assert(0);
         }
 
-        // here conjNEG.size() > 0
+        // here conjNEQ.size() > 0
 
-        if (conjLT.size() > 0 && conjGT.size() == 0) {
-          conjNEG.insert(curMin);
-          GetSymbolicMin(conjNEG, curMin, isInt);
-          return getPlusConst (curMin, isInt, -1);
+        Expr tmpMin;
+        GetSymbolicMin(conjNEQ, tmpMin, isInt);
+        Expr tmpMax;
+        GetSymbolicMax(conjNEQ, tmpMax, isInt);
+
+        if (curMinLE == NULL && curMinLT == NULL && curMaxGE == NULL && curMaxGT == NULL)
+        {
+          return plusEps(tmpMax, isInt);
         }
 
-        if (conjLT.size() == 0 && conjGT.size() > 0) {
-          conjNEG.insert(curMax);
-          GetSymbolicMax(conjNEG, curMax, isInt);
-          return getPlusConst (curMax, isInt, 1);
+        if (curMinLE != NULL && curMinLT == NULL && curMaxGE == NULL && curMaxGT == NULL)
+        {
+          return minusEps(mk<ITE>(mk<LT>(curMinLE, tmpMin), curMinLE, tmpMin), isInt);
         }
 
-        if (conjLT.size() == 0 && conjGT.size() == 0) {
-          GetSymbolicMax(conjNEG, curMax, isInt);
-          return getPlusConst (curMax, isInt, 1);
+        if (curMinLE == NULL && curMinLT != NULL && curMaxGE == NULL && curMaxGT == NULL)
+        {
+          return minusEps(mk<ITE>(mk<LT>(curMinLT, tmpMin), curMinLT, tmpMin), isInt);
         }
 
-        // now, both conjLT and conjGT are non-empty
+        if (curMinLE != NULL && curMinLT != NULL && curMaxGE == NULL && curMaxGT == NULL)
+        {
+          return minusEps(mk<ITE>(mk<LT>(curMin, tmpMin), curMin, tmpMin), isInt);
+        }
+
+        if (curMinLE == NULL && curMinLT == NULL && curMaxGE != NULL && curMaxGT == NULL)
+        {
+          return plusEps(mk<ITE>(mk<GT>(curMaxGE, tmpMax), curMaxGE, tmpMax), isInt);
+        }
+
+        if (curMinLE == NULL && curMinLT == NULL && curMaxGE == NULL && curMaxGT != NULL)
+        {
+          return plusEps(mk<ITE>(mk<GT>(curMaxGT, tmpMax), curMaxGT, tmpMax), isInt);
+        }
+
+        if (curMinLE == NULL && curMinLT == NULL && curMaxGE != NULL && curMaxGT != NULL)
+        {
+          return plusEps(mk<ITE>(mk<GT>(curMax, tmpMax), curMax, tmpMax), isInt);
+        }
+
+        assert (curMinLE != NULL || curMinLT != NULL);
+        assert (curMaxGE != NULL || curMaxGT != NULL);
+
+        if (curMaxGE == NULL) curMax = curMaxGT;
+        else curMax = curMaxGE;
+
+        if (curMinLE == NULL) curMin = curMinLT;
+        else curMin = curMinLE;
+
         Expr curMid;
-        GetSymbolicNeg(conjNEG, curMax, curMin, curMid, isInt);
+        GetSymbolicNeq(conjNEQ, curMax, curMin, curMid, (curMaxGE == NULL), isInt);
         return curMid;
       }
       return exp;
     }
-    
-    /**
-     * Check if there are bounded cycles (at most lvl steps) in the map
-     */
-    bool findCycles(ExprMap &m, Expr var, Expr var2, int lvl=3)
-    {
-      Expr entr = m[var];
-      if (entr == NULL) return false;
-      
-      ExprSet all;
-      filter (entr, bind::IsConst (), inserter (all, all.begin()));
-      
-      if (!emptyIntersect(var2, all)) return true;
-      
-      bool res = false;
-      if (lvl > 0) for (auto& exp: all) res |= findCycles(m, exp, var2, lvl-1);
-      
-      return res;
-    }
-    
-    /**
-     * Unfolding/simplifying of the map with definitions / substitutions
-     */
-    void refreshMapEntry (ExprMap &m, Expr var)
-    {
-      if (debug && false) outs() << "refreshMapEntry for " << *var << "\n";
-      
-      Expr entr = m[var];
-      if (std::find(std::begin(conflictVars), std::end (conflictVars), var) != std::end(conflictVars))
-      {
-        entr = defMap[var];
-        conflictVars.erase(var);
-      }
-      
-      if (entr == NULL) return;
-      
-      if (conflictVars.empty() && findCycles(m, var, var, 1))
-      {
-        // FIXME: it does not find all cycles unfortunately
-        if (debug) outs () << "cycle found for " << *var << "\n";
-        conflictVars.insert(var);
-      }
-      
-      ExprSet skv;
-      filter (entr, bind::IsConst (), inserter (skv, skv.begin()));
-      
-      for (auto& exp2: skv) {
-        refreshMapEntry(m, exp2);
-        entr = simplifyBool (u.simplifyITE (replaceAll(entr, exp2, m[exp2])));
-      }
-      
-      m[var] = u.numericUnderapprox(mk<EQ>(var, entr))->right();
-    }
-    
+
     /**
      * Actually, just print it to cmd in the smt-lib2 format
      */
@@ -791,36 +1052,33 @@ namespace ufo
     {
       smt.reset();
       smt.assertExpr(form);
-      
-      string errorInfo;
-      
-      if (errorInfo.empty ())
-      {
-        smt.toSmtLib (outs());
-        outs().flush ();
-      }
+      smt.toSmtLib (outs());
+      outs().flush ();
     }
   };
-  
+
   /**
    * Simple wrapper
    */
-  inline void aeSolveAndSkolemize(Expr s, Expr t, bool skol=true)
+  inline void aeSolveAndSkolemize(Expr s, Expr t, bool debug, bool skol)
   {
     ExprSet s_vars;
     ExprSet t_vars;
-    
+
     filter (s, bind::IsConst (), inserter (s_vars, s_vars.begin()));
     filter (t, bind::IsConst (), inserter (t_vars, t_vars.begin()));
-    
+
     ExprSet t_quantified = minusSets(t_vars, s_vars);
-    
-    outs() << "S: " << *s << "\n";
-    outs() << "T: \\exists ";
-    for (auto &a: t_quantified) outs() << *a << ", ";
-    outs() << *t << "\n";
-    
-    AeValSolver ae(s, t, t_quantified);
+
+    if (debug)
+    {
+      outs() << "S: " << *s << "\n";
+      outs() << "T: \\exists ";
+      for (auto &a: t_quantified) outs() << *a << ", ";
+      outs() << *t << "\n";
+    }
+
+    AeValSolver ae(s, t, t_quantified, debug, skol);
 
     if (ae.solve()){
       ae.printModelNeg();
