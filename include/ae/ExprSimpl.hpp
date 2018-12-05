@@ -56,6 +56,82 @@ namespace ufo
     return emptyIntersect(a, bv);
   }
 
+  template<typename Range> static int intersectSize(Expr a, Range& bv){
+    ExprVector av;
+    filter (a, bind::IsConst (), inserter(av, av.begin()));
+    ExprSet intersect;
+    for (auto &var1: av){
+      for (auto &var2: bv)
+        if (var1 == var2) intersect.insert(var1);
+    }
+    return intersect.size();
+  }
+
+  /**
+   * Self explanatory
+   */
+  inline static bool isConstOrItsAdditiveInverse(Expr e, Expr var){
+    if (e == var) {
+      return true;
+    }
+    if (isOpX<MULT>(e)){
+      if (lexical_cast<string>(e->left()) == "-1" && e->right() == var){
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Self explanatory
+   */
+  inline static Expr additiveInverse(Expr e){
+    if (isOpX<UN_MINUS>(e)){
+      return e->left();
+    }
+    else if (isOpX<MPQ>(e)){
+      string val = lexical_cast<string>(e);
+      int delim = val.find("/");
+      int val1 = stoi(val.substr(0, delim));
+      int val2 = stoi(val.substr(delim + 1));
+      if (delim < 0) {
+        return mkTerm (mpq_class (-val1), e->getFactory());
+      } else {
+        string inv_val = to_string(-val1) + "/" + to_string(val2);
+        return mkTerm (mpq_class (inv_val), e->getFactory());
+      }
+    }
+    else if (isOpX<MPZ>(e)){
+      int val = lexical_cast<int>(e);
+      return mkTerm (mpz_class (-val), e->getFactory());
+    }
+    else if (isOpX<MULT>(e)){
+      if (lexical_cast<string>(e->left()) == "-1"){
+        return e->right();
+      } else if (e->arity() == 2) {
+        Expr c = additiveInverse(e->left());
+        return mk<MULT>(c, e->right());
+      }
+    }
+    return mk<UN_MINUS>(e);
+  }
+
+  inline static void getPlusTerms (Expr a, ExprVector &terms)
+  {
+    if (isOpX<PLUS>(a)){
+      for (unsigned i = 0; i < a->arity(); i++){
+        getPlusTerms(a->arg(i), terms);
+      }
+    }
+    else if (isOpX<MINUS>(a)){
+      // assume only two args
+      terms.push_back(a->left());
+      terms.push_back(additiveInverse(a->right()));
+    } else {
+      terms.push_back(a);
+    }
+  }
+
   // if at the end disjs is empty, then a == true
   inline static void getConj (Expr a, ExprSet &conjs)
   {
@@ -187,60 +263,6 @@ namespace ufo
     }
     return e;
   }
-  
-  /**
-   * Self explanatory
-   */
-  inline static bool isConstOrItsAdditiveInverse(Expr e, Expr var){
-    if (e == var) {
-      return true;
-    }
-    if (isOpX<MULT>(e)){
-      if (lexical_cast<string>(e->left()) == "-1" && e->right() == var){
-        return true;
-      }
-    }
-    
-    return false;
-  }
-  
-  /**
-   * Self explanatory
-   */
-  inline static Expr additiveInverse(Expr e){
-    if (isOpX<UN_MINUS>(e)){
-      return e->left();
-    }
-    else if (isOpX<MPQ>(e)){
-      string val = lexical_cast<string>(e);
-      int delim = val.find("/");
-      int val1 = stoi(val.substr(0, delim));
-      int val2 = stoi(val.substr(delim + 1));
-      if (delim < 0) {
-        return mkTerm (mpq_class (-val1), e->getFactory());
-      } else {
-        string inv_val = to_string(-val1) + "/" + to_string(val2);
-        return mkTerm (mpq_class (inv_val), e->getFactory());
-      }
-    }
-    else if (isOpX<MPZ>(e)){
-      int val = lexical_cast<int>(e);
-      return mkTerm (mpz_class (-val), e->getFactory());
-    }
-    else if (isOpX<MULT>(e)){
-      if (lexical_cast<string>(e->left()) == "-1"){
-        return e->right();
-      } else if (e->arity() == 2) {
-        Expr c = additiveInverse(e->left());
-        return mk<MULT>(c, e->right());
-      }
-    }
-    else if (bind::isIntConst(e))
-      return mk<MULT>(mkTerm (mpz_class (-1), e->getFactory()), e);
-
-    // otherwise could be buggy...
-    return mk<MULT>(mkTerm (mpq_class (-1), e->getFactory()), e);
-  }
 
   /**
    * Commutativity in Addition
@@ -292,66 +314,33 @@ namespace ufo
     Expr r = e->right();
     Expr lhs;     // expression, containing var; assume, var contains only in one clause
     ExprSet rhs;  // the rest of e
-    
-    // first, parse l;
-    
-    if (isOpX<PLUS>(l)){
-      for (unsigned i = 0; i < l->arity (); i++){
-        Expr a = l->arg(i);
-        if (isConstOrItsAdditiveInverse(a, var)){
-          lhs = a;
-          continue;
-        }
-        rhs.insert(additiveInverse(a));
+
+    ExprVector terms;
+    getPlusTerms(l, terms);
+    for (auto & a : terms)
+    {
+      if (contains(var, a))
+      {
+        lhs = a;
+        continue;
       }
-    } else if (isOpX<MINUS>(l)){
-      if (isConstOrItsAdditiveInverse(l->left(), var)){
-        lhs = l->left();
-        rhs.insert(additiveInverse(l->right()));
-      } else if (isConstOrItsAdditiveInverse(l->right(), var)){
-        lhs = l->right();
-        rhs.insert(additiveInverse(l->left()));
+      rhs.insert(additiveInverse(a));
+    }
+
+    terms.clear();
+    getPlusTerms(r, terms);
+    for (auto & a : terms)
+    {
+      if (contains(var, a))
+      {
+        assert(lhs == NULL);
+        lhs = additiveInverse(a);
+        continue;
       }
-    } else {
-      if (isConstOrItsAdditiveInverse(l, var)){
-        lhs = l;
-      } else if (lexical_cast<string>(l) != "0"){
-        rhs.insert(additiveInverse(l));
-      }
+      rhs.insert(a);
     }
     
-    // second, parse r;
-    
-    if (isOpX<PLUS>(r)){
-      for (unsigned i = 0; i < r->arity (); i++){
-        Expr a = r->arg(i);
-        if (isConstOrItsAdditiveInverse(a, var)){
-          lhs = additiveInverse(a);
-          continue;
-        }
-        rhs.insert(a);
-      }
-    } else {
-      if (isConstOrItsAdditiveInverse(r, var)){
-        lhs = additiveInverse(r);
-      } else if (lexical_cast<string>(r) != "0"){
-        rhs.insert(r);
-      }
-    }
-    
-    // third, combine results;
-    
-    if (lhs != 0){
-      Expr rhsPlus;
-      if (rhs.size() > 1){
-        rhsPlus = exprDistributor(mknary<PLUS>(rhs));
-      } else if (rhs.size() == 1) {
-        rhsPlus = *rhs.begin();
-      } else if (rhs.size() == 0) {
-        rhsPlus = mkTerm (mpz_class (0), e->getFactory());
-      }
-      return mk<T>(lhs,rhsPlus);
-    }
+    if (lhs != 0) return mk<T>(lhs, mkplus(rhs, e->getFactory()));
     return e;
   }
   
@@ -939,12 +928,38 @@ namespace ufo
     return exp;
   }
 
-  struct EqMiner : public std::unary_function<Expr, VisitAction>
+  bool isNumeric(Expr a)
+  {
+    // don't consider ITE-s
+    return (isOp<NumericOp>(a) || isOpX<MPZ>(a) || isOpX<MPQ>(a) ||
+             bind::isIntConst(a) || bind::isRealConst(a));
+  }
+
+  struct EqNumMiner : public std::unary_function<Expr, VisitAction>
   {
     ExprSet& eqs;
     Expr& var;
 
-    EqMiner (Expr& _var, ExprSet& _eqs): var(_var), eqs(_eqs) {};
+    EqNumMiner (Expr& _var, ExprSet& _eqs): var(_var), eqs(_eqs) {};
+
+    VisitAction operator() (Expr exp)
+    {
+      if (isOpX<EQ>(exp) && (contains(exp, var)) &&
+          isNumeric(exp->left()) && isNumeric(exp->right()))
+      {
+        eqs.insert(ineqMover(exp, var));
+        return VisitAction::skipKids ();
+      }
+      return VisitAction::doKids ();
+    }
+  };
+
+  struct EqBoolMiner : public std::unary_function<Expr, VisitAction>
+  {
+    ExprSet& eqs;
+    Expr& var;
+
+    EqBoolMiner (Expr& _var, ExprSet& _eqs): var(_var), eqs(_eqs) {};
 
     VisitAction operator() (Expr exp)
     {
@@ -959,8 +974,16 @@ namespace ufo
 
   inline void getEqualities (Expr exp, Expr var, ExprSet& eqs)
   {
-    EqMiner trm (var, eqs);
-    dagVisit (trm, exp);
+    if (bind::isIntConst(var) || bind::isRealConst(var))
+    {
+      EqNumMiner trm (var, eqs);
+      dagVisit (trm, exp);
+    }
+    else
+    {
+      EqBoolMiner trm (var, eqs);
+      dagVisit (trm, exp);
+    }
   }
 }
 

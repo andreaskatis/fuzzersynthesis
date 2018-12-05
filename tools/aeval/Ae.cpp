@@ -53,7 +53,7 @@ int main (int argc, char ** argv)
 
   ExprVector params;
 
-  if (argc < 3 || argc > 4)
+  if (argc < 3 || argc > 6)
   {
     outs() << "Unable to parse arguments\n";
     return 0;
@@ -62,7 +62,8 @@ int main (int argc, char ** argv)
   aeSolveAndSkolemize(z3_from_smtlib_file (z3, getSmtFileName(1, argc, argv)),
                       z3_from_smtlib_file (z3, getSmtFileName(2, argc, argv)),
                       getBoolValue("--debug", false, argc, argv),
-                      getBoolValue("--skol", false, argc, argv));
+                      getBoolValue("--skol", false, argc, argv),
+                      getBoolValue("--compact", false, argc, argv));
 
   return 0;
 }

@@ -133,24 +133,19 @@ namespace ufo
      */
     Expr simplifyITE(Expr ex, Expr upLevelCond)
     {
-      ex = replaceAll(ex, upLevelCond, mk<TRUE>(efac));
-      
       if (isOpX<ITE>(ex)){
         
         Expr cond = ex->arg(0);
         Expr br1 = ex->arg(1);
         Expr br2 = ex->arg(2);
-        
-        Expr updCond1 = mk<AND>(upLevelCond, mk<NEG>(cond));
-        Expr updCond2 = mk<AND>(mk<NEG>(upLevelCond), cond);
 
-        if (!isSat(updCond1)) return br1;
+        if (!isSat(cond, upLevelCond)) return br2;
 
-        if (!isSat(updCond2)) return br2;
+        if (!isSat(mk<NEG>(cond), upLevelCond)) return br1;
 
         return mk<ITE>(cond,
-                       simplifyITE(br1, updCond1),
-                       simplifyITE(br2, updCond2));
+                       simplifyITE(br1, mk<AND>(upLevelCond, cond)),
+                       simplifyITE(br2, mk<AND>(upLevelCond, mk<NEG>(cond))));
       } else {
         return ex;
       }
@@ -173,18 +168,19 @@ namespace ufo
         if (br1 == br2) return br1;
         
         if (isOpX<TRUE>(br1) && isOpX<FALSE>(br2)) return cond;
-        
+
         if (isOpX<FALSE>(br1) && isOpX<TRUE>(br2)) return mk<NEG>(cond);
         
         return mk<ITE>(cond,
                        simplifyITE(br1, cond),
                        simplifyITE(br2, mk<NEG>(cond)));
         
-      } else if (isOpX<IMPL>(ex)) {
-        
+      }
+      else if (isOpX<IMPL>(ex)) {
+
         return mk<IMPL>(simplifyITE(ex->left()), simplifyITE(ex->right()));
       } else if (isOpX<AND>(ex) || isOpX<OR>(ex)){
-        
+
         ExprSet args;
         for (auto it = ex->args_begin(), end = ex->args_end(); it != end; ++it){
           args.insert(simplifyITE(*it));
