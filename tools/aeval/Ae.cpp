@@ -51,19 +51,18 @@ int main (int argc, char ** argv)
   ExprFactory efac;
   EZ3 z3(efac);
 
-  ExprVector params;
+  bool skol = getBoolValue("--skol", false, argc, argv);
+  bool allincl = getBoolValue("--all-inclusive", false, argc, argv);
+  bool compact = getBoolValue("--compact", false, argc, argv);
+  bool debug = getBoolValue("--debug", false, argc, argv);
 
-  if (argc < 3 || argc > 6)
-  {
-    outs() << "Unable to parse arguments\n";
-    return 0;
-  }
+  Expr s = z3_from_smtlib_file (z3, getSmtFileName(1, argc, argv));
+  Expr t = z3_from_smtlib_file (z3, getSmtFileName(2, argc, argv));
 
-  aeSolveAndSkolemize(z3_from_smtlib_file (z3, getSmtFileName(1, argc, argv)),
-                      z3_from_smtlib_file (z3, getSmtFileName(2, argc, argv)),
-                      getBoolValue("--debug", false, argc, argv),
-                      getBoolValue("--skol", false, argc, argv),
-                      getBoolValue("--compact", false, argc, argv));
+  if (allincl)
+    getAllInclusiveSkolem(s, t, debug, compact);
+  else
+    aeSolveAndSkolemize(s, t, skol, debug, compact);
 
   return 0;
 }

@@ -40,6 +40,7 @@ namespace ufo
     Expr skolSkope;
     ExprSet sensitiveVars; // for compaction
     set<int> bestIndexes; // for compaction
+    map<Expr, ExprVector> skolemConstraints;
 
     bool skol;
     bool debug;
@@ -1075,8 +1076,8 @@ namespace ufo
     {
       ExprSet skolUncond;
       ExprSet eligibleVars;
-      map<Expr, ExprVector> skolemConstraints;
 
+      skolemConstraints.clear(); // GF: just in case
       for (auto &var: v)
       {
         bool elig = compact;
@@ -1241,6 +1242,15 @@ namespace ufo
       return partitioning_size;
     }
 
+    // Runnable only after getSkolemFunction
+    Expr getSkolemConstraints(int i)
+    {
+      ExprSet constrs;
+      for (auto & a : skolemConstraints)
+        constrs.insert(a.second[i]);
+      return conjoin(constrs, efac);
+    }
+
     /**
      * Actually, just print it to cmd in the smt-lib2 format
      */
@@ -1290,6 +1300,68 @@ namespace ufo
         ae.serialize_formula(skol);
       }
     }
+  }
+
+  inline void getAllInclusiveSkolem(Expr s, Expr t, bool debug, bool compact)
+  {
+    ExprSet s_vars;
+    ExprSet t_vars;
+
+    filter (s, bind::IsConst (), inserter (s_vars, s_vars.begin()));
+    filter (t, bind::IsConst (), inserter (t_vars, t_vars.begin()));
+
+    ExprSet t_quantified = minusSets(t_vars, s_vars);
+
+    SMTUtils u(s->getFactory());
+
+    if (debug)
+    {
+      outs() << "S: " << *s << "\n";
+      outs() << "T: \\exists ";
+      for (auto &a: t_quantified) outs() << *a << ", ";
+      outs() << *t << "\n";
+    }
+
+    Expr t_init = t;
+    ExprVector skolems;
+    while (true)
+    {
+      AeValSolver ae(s, t, t_quantified, debug, true);
+
+      if (ae.solve()){
+        if (skolems.size() == 0)
+        {
+          outs () << "Result: invalid\n";
+          ae.printModelNeg();
+          outs() << "\nvalid subset:\n";
+          u.serialize_formula(ae.getValidSubset());
+          return;
+        }
+        break;
+      } else {
+        skolems.push_back(ae.getSkolemFunction(compact));
+        t = mk<AND>(t, mk<NEG>(ae.getSkolemConstraints(0)));
+      }
+    }
+
+    Expr skol = skolems.back();
+    if (skolems.size() > 1)
+    {
+      Expr varName = mkTerm <std::string> ("_aeval_tmp_rnd", s->getFactory());
+      Expr var = bind::intConst(varName);
+      for (int i = skolems.size() - 2; i >= 0; i--)
+      {
+        skol = mk<ITE>(mk<EQ>(var, mkTerm (mpz_class (i), s->getFactory())),
+                       skolems[i], skol);
+      }
+    }
+    if (debug)
+    {
+      outs () << "Sanity check [all-inclusive]: " <<
+        u.implies(mk<AND>(s, skol), t_init) << "\n";
+    }
+    outs () << "Result: valid\n\nextracted skolem:\n";
+    u.serialize_formula(skol);
   };
 }
 
