@@ -794,46 +794,7 @@ namespace ufo
       return exp;
     }
   };
-  
-  struct PlusMinusChanger
-  {
-    ExprFactory &efac;
-    
-    // bool changed;
-    
-    PlusMinusChanger (ExprFactory& _efac):
-    efac(_efac)
-    {
-      // changed = false;
-    };
-    
-    Expr operator() (Expr exp)
-    {
-      
-      if (isOpX<PLUS>(exp)/* && !changed*/){
-        //changed = true;
-        ExprSet expClauses;
-        bool changed = false;
-        expClauses.insert(mkTerm (mpz_class (1), exp->getFactory()));
-        for (ENode::args_iterator it = exp->args_begin(), end = exp->args_end();
-             it != end; ++it){
-          if (changed){
-            expClauses.insert(additiveInverse(*it));
-          } else {
-            expClauses.insert(*it);
-          }
-          
-          changed = !changed;
-        }
-        Expr res = mknary<PLUS>(expClauses);
-        
-        return res;
-      }
-      
-      return exp;
-    }
-  };
-  
+
   inline static Expr simplifyArithm (Expr exp)
   {
     RW<SimplifyArithmExpr> rw(new SimplifyArithmExpr(exp->getFactory()));
@@ -845,13 +806,43 @@ namespace ufo
     RW<SimplifyBoolExpr> rw(new SimplifyBoolExpr(exp->getFactory()));
     return dagVisit (rw, exp);
   }
-  
-  inline static Expr randomChangePlusMinus (Expr exp)
+
+  template <typename T> static Expr convertIntsToReals (Expr exp);
+
+  template <typename T> struct IntToReal
   {
-    RW<PlusMinusChanger> rw(new PlusMinusChanger(exp->getFactory()));
+    IntToReal<T> () {};
+
+    Expr operator() (Expr exp)
+    {
+      if (isOpX<T>(exp))
+      {
+        ExprVector args;
+        for (int i = 0; i < exp->arity(); i++)
+        {
+          Expr e = exp->arg(i);
+          if (isOpX<MPZ>(e))
+            e = mkTerm (mpq_class (lexical_cast<int>(e)), exp->getFactory());
+          else {
+            e = convertIntsToReals<PLUS>(e);
+            e = convertIntsToReals<MINUS>(e);
+            e = convertIntsToReals<MULT>(e);
+            e = convertIntsToReals<UN_MINUS>(e);
+          }
+          args.push_back(e);
+        }
+        return mknary<T>(args);
+      }
+      return exp;
+    }
+  };
+
+  template <typename T> static Expr convertIntsToReals (Expr exp)
+  {
+    RW<IntToReal<T>> rw(new IntToReal<T>());
     return dagVisit (rw, exp);
   }
-  
+
   inline static ExprSet minusSets(ExprSet& v1, ExprSet& v2){
     ExprSet v3;
     bool res;

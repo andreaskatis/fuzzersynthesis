@@ -1276,6 +1276,9 @@ namespace ufo
 
     ExprSet t_quantified = minusSets(t_vars, s_vars);
 
+    s = convertIntsToReals<DIV>(s);
+    t = convertIntsToReals<DIV>(t);
+
     if (debug)
     {
       outs() << "S: " << *s << "\n";
@@ -1311,6 +1314,9 @@ namespace ufo
     filter (t, bind::IsConst (), inserter (t_vars, t_vars.begin()));
 
     ExprSet t_quantified = minusSets(t_vars, s_vars);
+
+    s = convertIntsToReals<DIV>(s);
+    t = convertIntsToReals<DIV>(t);
 
     SMTUtils u(s->getFactory());
 
