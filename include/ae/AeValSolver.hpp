@@ -17,8 +17,6 @@ namespace ufo
 
     Expr s;
     Expr t;
-    // Expr randInt;  //Andreas : random int term
-    // Expr randReal; // Same as above for reals
     ExprVector randSanityExprs; //Andreas : Vector with variables corresponding to random values
     ExprSet v; // existentially quantified vars
     ExprVector sVars;
@@ -41,6 +39,9 @@ namespace ufo
     vector<ExprMap> skolMaps;
     vector<ExprMap> someEvals;
     Expr skolSkope;
+    ExprSet sensitiveVars; // for compaction
+    set<int> bestIndexes; // for compaction
+    map<Expr, ExprVector> skolemConstraints;
 
     bool skol;
     bool debug;
@@ -161,29 +162,6 @@ namespace ufo
       splitDefs(m1, m2, m3.size());
     }
 
-    void assignValues (ExprMap& m, ExprMap& reservedAssignment)
-    {
-      for (auto & exp : m)
-      {
-        if (bind::isBoolConst(exp.first) ||
-            bind::isIntConst(exp.first) ||
-            bind::isRealConst(exp.first))
-        {
-          if (find(v.begin(),v.end(), exp.second) != v.end())
-          {
-            if (exp.first == m[exp.second])
-            {
-              Expr def = reservedAssignment[exp.first];
-              if (def != NULL)
-                exp.second = reservedAssignment[exp.first]->right();
-              else
-                exp.second = getDefaultAssignment(exp.first);
-            }
-          }
-        }
-      }
-    }
-
     /**
      * Decide validity of \forall s => \exists v . t
      */
@@ -193,7 +171,6 @@ namespace ufo
       smt.assertExpr (s);
 
       if (!smt.solve ()) {
-        outs() << "\nE.v.: -; Iter.: 0; Result: valid\n\n";
         return false;
       } else {
         ZSolver<EZ3>::Model m = smt.getModel();
@@ -207,7 +184,6 @@ namespace ufo
       {
         smt.assertExpr (boolop::lneg (t));
         boost::tribool res = smt.solve ();
-        outs() << "\nE.v.: 0; Iter.: 0; Result: " << (res? "invalid" : "valid") << "\n\n";
         return res;
       }
 
@@ -249,10 +225,6 @@ namespace ufo
         smt.push();
         smt.assertExpr (t);
       }
-
-      outs() << "\nE.v.: " << v.size() << "; Iter.: " << partitioning_size
-             << "; Result: " << (res? "invalid" : "valid") << "\n\n";
-
       return res;
     }
 
@@ -281,8 +253,6 @@ namespace ufo
 
     void fillSubsts (Expr ef, Expr es, Expr mbp, ExprSet& substs)
     {
-      if (debug) outs() << "  subst: " << *ef << "  <-->  " << *es << "\n";
-
       if (!sameBoolOrCmp(ef, es))
       {
         substs.insert(mk<EQ>(ineqNegReverter(ef), ineqNegReverter(es)));
@@ -316,7 +286,6 @@ namespace ufo
         }
       }
       if (m.eval(exp) != exp){
-        if (debug) outs () << "model: " << *exp <<  "  <-->  " << *m.eval(exp) << "\n";
         modelMap[exp] = mk<EQ>(exp, m.eval(exp));
       }
     }
@@ -476,7 +445,8 @@ namespace ufo
     Expr getValidSubset()
     {
       if (partitioning_size == 0){
-        outs() << "WARNING: Trivial valid subset (equal to False) due to 0 iterations\n";
+//        outs() << "WARNING: Trivial valid subset (equal to False) due to 0 iterations\n";
+        return mk<FALSE>(efac);
       }
       return mk<AND>(s, disjoin(projections, efac));
     }
@@ -615,7 +585,7 @@ namespace ufo
     /**
      * Mine the structure of T `conditionally`
      */
-    Expr getCondDefinitionFormula(Expr var, Expr pre, bool impl)
+    Expr getCondDefinitionFormula(Expr var, Expr pre)
     {
       Expr res = NULL;
       ExprSet eqs;
@@ -623,8 +593,7 @@ namespace ufo
       getEqualities(t, var, eqs);
       for (auto a : eqs)
       {
-        if (a->right() != a->left() && u.implies(pre, a))
-          eqsFilt.insert((a->left() == var) ? a->right() : a->left());
+        if (u.implies(pre, a) && !u.isEquiv(a, mk<TRUE>(efac))) eqsFilt.insert(a);
       }
 
       int maxSz = 0;
@@ -799,6 +768,10 @@ namespace ufo
 
           return mk<PLUS>(e, randRealApp);
         }
+// =======
+//       if (isInt) return mk<PLUS>(e, mkTerm (mpz_class (1), efac));
+//       else return mk<PLUS>(e, mkTerm (mpq_class (1), efac));
+// >>>>>>> 8a6fce3c735915c65b7b5768c83e309897f38099
     }
 
     /**
@@ -856,6 +829,13 @@ namespace ufo
         randSanityExprs.push_back(mk<GT>(randRealApp, mkTerm (mpq_class (0), efac)));
         return mk<MINUS>(e, randRealApp);       
       }
+// =======
+//       if (isOpX<MPZ>(e) && isInt)
+//         return mkTerm (mpz_class (boost::lexical_cast<int> (e) - 1), efac);
+
+//       if (isInt) return mk<MINUS>(e, mkTerm (mpz_class (1), efac));
+//       else return mk<MINUS>(e, mkTerm (mpq_class (1), efac));
+// >>>>>>> 8a6fce3c735915c65b7b5768c83e309897f38099
     }
 
     /**
@@ -863,7 +843,18 @@ namespace ufo
      */
     Expr getAssignmentForVar(Expr var, Expr exp)
     {
-      if (debug) outs () << "getAssignmentForVar " << *var << " in:\n" << *exp << "\n";
+      if (!isNumeric(var))
+      {
+        if (isOpX<EQ>(exp))
+        {
+          if (var == exp->left()) return exp->right();
+          if (var == exp->right()) return exp->left();
+        }
+        outs () << "getAssignmentForVar " << *var << " in:\n" << *exp << "\n";
+        assert(0);
+      }
+
+//      if (debug) outs () << "getAssignmentForVar " << *var << " in:\n" << *exp << "\n";
 
       bool isInt = bind::isIntConst(var);
 
@@ -1726,6 +1717,345 @@ namespace ufo
       return exp;
     }
 
+    void searchDownwards(set<int> &indexes, Expr var, ExprVector& skol)
+    {
+      if (debug)
+      {
+        outs () << "searchDownwards for " << *var << ": [[ indexes: ";
+        for (auto i : indexes) outs() << i << ", ";
+        outs () << " ]]\n";
+      }
+      if (indexes.empty()) return;
+
+      ExprSet quant;
+      quant.insert(var);
+      ExprSet pre;
+      ExprSet post;
+      for (auto i : indexes)
+      {
+        pre.insert(projections[i]);
+        post.insert(skol[i]);
+      }
+      AeValSolver ae(disjoin(pre, efac), conjoin(post, efac), quant, false, false);
+
+      if (!ae.solve())
+      {
+        if (bestIndexes.size() < indexes.size()) bestIndexes = indexes;
+        return;
+      }
+      else
+      {
+        Expr subs = ae.getValidSubset();
+        if (isOpX<FALSE>(subs))
+        {
+//          for (int j : indexes)
+//          {
+//            set<int> indexes2 = indexes;
+//            indexes2.erase(j);
+//            searchDownwards(indexes2, var, skol);
+//          }
+          return;
+        }
+        else
+        {
+          bool erased = false;
+
+          for (auto i = indexes.begin(); i != indexes.end();)
+          {
+            if (!u.implies(subs, projections[*i]))
+            {
+              i = indexes.erase(i);
+              erased = true;
+            }
+            else
+            {
+              ++i;
+            }
+          }
+          if (erased)
+          {
+            searchDownwards(indexes, var, skol);
+          }
+          else
+          {
+            for (int j : indexes)
+            {
+              set<int> indexes2 = indexes;
+              indexes2.erase(j);
+              searchDownwards(indexes2, var, skol);
+            }
+          }
+        }
+      }
+    }
+
+    void searchUpwards(set<int> &indexes, Expr var, ExprVector& skol)
+    {
+      if (debug)
+      {
+        outs () << "searchUpwards for " << *var << ": [[ indexes: ";
+        for (auto i : indexes) outs() << i << ", ";
+        outs () << " ]]\n";
+      }
+      ExprSet quant;
+      quant.insert(var);
+      ExprSet pre;
+      ExprSet post;
+      for (auto i : indexes)
+      {
+        pre.insert(projections[i]);
+        post.insert(skol[i]);
+      }
+      AeValSolver ae(disjoin(pre, efac), conjoin(post, efac), quant, false, false);
+
+      if (!ae.solve())
+      {
+        if (bestIndexes.size() < indexes.size()) bestIndexes = indexes;
+        for (int i = 0; i < partitioning_size; i++)
+        {
+          if (find (indexes.begin(), indexes.end(), i) != indexes.end()) continue;
+          set<int> indexes2 = indexes;
+          indexes2.insert(i);
+          searchUpwards(indexes2, var, skol);
+        }
+        return;
+      }
+    }
+
+    void breakCyclicSubsts(ExprMap& cyclicSubsts, ExprMap& evals, ExprMap& substsMap)
+    {
+      if (cyclicSubsts.empty()) return;
+
+      map<Expr, int> tmp;
+      for (auto & a : cyclicSubsts)
+      {
+        ExprSet vars;
+        filter (a.second, bind::IsConst (), inserter (vars, vars.begin()));
+        for (auto & b : vars)
+        {
+          if (find(v.begin(), v.end(), b) != v.end())
+            tmp[b]++;
+        }
+      }
+
+      int min = 0;
+      Expr a;
+      for (auto & b : tmp)
+      {
+        if (b.second >= min)
+        {
+          min = b.second;
+          a = b.first;
+        }
+      }
+
+      for (auto b = cyclicSubsts.begin(); b != cyclicSubsts.end(); b++)
+        if (b->first == a)
+        {
+          substsMap[a] = evals[a]->right();
+          cyclicSubsts.erase(b); break;
+        }
+
+      substsMap.insert (cyclicSubsts.begin(), cyclicSubsts.end());
+      splitDefs(substsMap, cyclicSubsts);
+      breakCyclicSubsts(cyclicSubsts, evals, substsMap);
+    }
+
+    Expr combineAssignments(ExprMap& allAssms, ExprMap& evals)
+    {
+      ExprSet skolTmp;
+      ExprMap cyclicSubsts;
+      splitDefs(allAssms, cyclicSubsts);
+
+      breakCyclicSubsts(cyclicSubsts, evals, allAssms);
+      assert (cyclicSubsts.empty());
+      for (auto & a : sensitiveVars)
+      {
+        assert (emptyIntersect(allAssms[a], v));
+        skolTmp.insert(mk<EQ>(a, allAssms[a]));
+      }
+      return conjoin(skolTmp, efac);
+    }
+
+    Expr getSkolemFunction (bool compact = false)
+    {
+      ExprSet skolUncond;
+      ExprSet eligibleVars;
+
+      skolemConstraints.clear(); // GF: just in case
+      for (auto &var: v)
+      {
+        bool elig = compact;
+        for (int i = 0; i < partitioning_size; i++)
+        {
+          if (defMap[var] != NULL)
+          {
+            skolMaps[i][var] = mk<EQ>(var, defMap[var]);
+          }
+          else if (skolMaps[i][var] == NULL)
+          {
+            ExprSet pre;
+            pre.insert(skolSkope);
+            for (auto & a : skolMaps[i]) if (a.second != NULL) pre.insert(a.second);
+            pre.insert(t);
+            Expr assm = getCondDefinitionFormula(var, conjoin(pre, efac));
+            if (assm != NULL)
+            {
+              skolMaps[i][var] = assm;
+            }
+            else if (someEvals[i][var] != NULL)
+            {
+              skolMaps[i][var] = someEvals[i][var];
+            }
+            else skolMaps[i][var] = mk<EQ>(var, getDefaultAssignment(var));
+          }
+
+          if (compact) // small optim:
+          {
+            if (bind::isBoolConst(var) && u.isEquiv(skolMaps[i][var]->right(), mk<TRUE>(efac)))
+              skolMaps[i][var] = mk<EQ>(var, mk<TRUE>(efac));
+            if (bind::isBoolConst(var) && u.isEquiv(skolMaps[i][var]->right(), mk<FALSE>(efac)))
+              skolMaps[i][var] = mk<EQ>(var, mk<FALSE>(efac));
+          }
+
+          elig &= (1 == intersectSize (skolMaps[i][var], v));
+        }
+        if (elig) eligibleVars.insert(var);
+        else sensitiveVars.insert(var);
+      }
+
+      for (auto & a : v)
+      {
+        ExprVector t;
+        for (int i = 0; i < partitioning_size; i++)
+        {
+          assert(skolMaps[i][a] != NULL);
+          t.push_back(skolMaps[i][a]); // should be on i-th position
+        }
+        skolemConstraints[a] = t;
+      }
+
+      map<Expr, set<int>> inds;
+      ExprMap sameAssms;
+      for (auto & var : eligibleVars)
+      {
+        bool same = true;
+        auto & a = skolemConstraints[var];
+        for (int i = 1; i < partitioning_size; i++)
+        {
+          if (a[0] != a[i])
+          {
+            same = false;
+            break;
+          }
+        }
+        if (same)
+        {
+          sameAssms[var] = getAssignmentForVar(var, a[0]);
+          skolUncond.insert(mk<EQ>(var, sameAssms[var]));
+        }
+        else
+        {
+          sensitiveVars.insert(var);
+        }
+      }
+
+      for (auto & var : sensitiveVars)
+      {
+        bestIndexes.clear();
+        if (find(eligibleVars.begin(), eligibleVars.end(), var) != eligibleVars.end()
+            && compact)
+        {
+          set<int> indexes;
+          for (int i = 0; i < partitioning_size; i++) indexes.insert(i);
+          searchDownwards (indexes, var, skolemConstraints[var]);
+          searchUpwards (bestIndexes, var, skolemConstraints[var]);
+        }
+        inds[var] = bestIndexes;
+      }
+
+      Expr skol;
+      ExprSet skolTmp;
+      if (sensitiveVars.size() > 0)
+      {
+        set<int> intersect;
+        for (int i = 0; i < partitioning_size; i ++)
+        {
+          int found = true;
+          for (auto & a : inds)
+          {
+            if (find (a.second.begin(), a.second.end(), i) == a.second.end())
+            {
+              found = false;
+              break;
+            }
+          }
+          if (found) intersect.insert(i);
+        }
+
+        if (intersect.size() <= 1)
+        {
+          int maxSz = 0;
+          int largestPre = 0;
+          for (int i = 0; i < partitioning_size; i++)
+          {
+            int curSz = treeSize(projections[i]);
+            if (curSz > maxSz)
+            {
+              maxSz = curSz;
+              largestPre = i;
+            }
+          }
+          intersect.clear();
+          intersect.insert(largestPre);
+        }
+
+        ExprMap allAssms = sameAssms;
+        for (auto & a : sensitiveVars)
+        {
+          ExprSet cnjs;
+          for (int b : intersect) getConj(skolemConstraints[a][b], cnjs);
+          Expr def = getAssignmentForVar(a, conjoin(cnjs, efac));
+          allAssms[a] = def;
+        }
+        Expr bigSkol = combineAssignments(allAssms, someEvals[*intersect.begin()]);
+
+        for (int i = 0; i < partitioning_size; i++)
+        {
+          allAssms = sameAssms;
+          if (find(intersect.begin(), intersect.end(), i) == intersect.end())
+          {
+            for (auto & a : sensitiveVars)
+            {
+              Expr def = getAssignmentForVar(a, skolemConstraints[a][i]);
+              allAssms[a] = def;
+            }
+            bigSkol = mk<ITE>(projections[i], combineAssignments(allAssms, someEvals[i]), bigSkol);
+            if (compact) bigSkol = u.simplifyITE(bigSkol);
+          }
+        }
+        skolUncond.insert(bigSkol);
+      }
+
+      skol = mk<AND>(conjoin(skolUncond, efac), skolSkope);
+      if (debug) outs () << "Sanity check: " << u.implies(mk<AND>(s, skol), t) << "\n";
+      return skol;
+    }
+
+    int getPartitioningSize()
+    {
+      return partitioning_size;
+    }
+
+    // Runnable only after getSkolemFunction
+    Expr getSkolemConstraints(int i)
+    {
+      ExprSet constrs;
+      for (auto & a : skolemConstraints)
+        constrs.insert(a.second[i]);
+      return conjoin(constrs, efac);
+    }
+
     /**
      * Actually, just print it to cmd in the smt-lib2 format
      */
@@ -1741,7 +2071,7 @@ namespace ufo
   /**
    * Simple wrapper
    */
-  inline void aeSolveAndSkolemize(Expr s, Expr t, bool debug, bool skol)
+  inline void aeSolveAndSkolemize(Expr s, Expr t, bool debug, bool skol, bool compact)
   {
     ExprSet s_vars;
     ExprSet t_vars;
@@ -1750,6 +2080,9 @@ namespace ufo
     filter (t, bind::IsConst (), inserter (t_vars, t_vars.begin()));
 
     ExprSet t_quantified = minusSets(t_vars, s_vars);
+
+    s = convertIntsToReals<DIV>(s);
+    t = convertIntsToReals<DIV>(t);
 
     if (debug)
     {
@@ -1762,16 +2095,84 @@ namespace ufo
     AeValSolver ae(s, t, t_quantified, debug, skol);
 
     if (ae.solve()){
+      outs () << "Iter: " << ae.getPartitioningSize() << "; Result: invalid\n";
       ae.printModelNeg();
       outs() << "\nvalid subset:\n";
       ae.serialize_formula(ae.getValidSubset());
     } else {
+      outs () << "Iter: " << ae.getPartitioningSize() << "; Result: valid\n";
       if (skol)
       {
         outs() << "\nextracted skolem:\n";
-        ae.serialize_formula(ae.getSimpleSkolemFunction());
+        Expr skol = ae.getSkolemFunction(compact);
+        ae.serialize_formula(skol);
       }
     }
+  }
+
+  inline void getAllInclusiveSkolem(Expr s, Expr t, bool debug, bool compact)
+  {
+    ExprSet s_vars;
+    ExprSet t_vars;
+
+    filter (s, bind::IsConst (), inserter (s_vars, s_vars.begin()));
+    filter (t, bind::IsConst (), inserter (t_vars, t_vars.begin()));
+
+    ExprSet t_quantified = minusSets(t_vars, s_vars);
+
+    s = convertIntsToReals<DIV>(s);
+    t = convertIntsToReals<DIV>(t);
+
+    SMTUtils u(s->getFactory());
+
+    if (debug)
+    {
+      outs() << "S: " << *s << "\n";
+      outs() << "T: \\exists ";
+      for (auto &a: t_quantified) outs() << *a << ", ";
+      outs() << *t << "\n";
+    }
+
+    Expr t_init = t;
+    ExprVector skolems;
+    while (true)
+    {
+      AeValSolver ae(s, t, t_quantified, debug, true);
+
+      if (ae.solve()){
+        if (skolems.size() == 0)
+        {
+          outs () << "Result: invalid\n";
+          ae.printModelNeg();
+          outs() << "\nvalid subset:\n";
+          u.serialize_formula(ae.getValidSubset());
+          return;
+        }
+        break;
+      } else {
+        skolems.push_back(ae.getSkolemFunction(compact));
+        t = mk<AND>(t, mk<NEG>(ae.getSkolemConstraints(0)));
+      }
+    }
+
+    Expr skol = skolems.back();
+    if (skolems.size() > 1)
+    {
+      Expr varName = mkTerm <std::string> ("_aeval_tmp_rnd", s->getFactory());
+      Expr var = bind::intConst(varName);
+      for (int i = skolems.size() - 2; i >= 0; i--)
+      {
+        skol = mk<ITE>(mk<EQ>(var, mkTerm (mpz_class (i), s->getFactory())),
+                       skolems[i], skol);
+      }
+    }
+    if (debug)
+    {
+      outs () << "Sanity check [all-inclusive]: " <<
+        u.implies(mk<AND>(s, skol), t_init) << "\n";
+    }
+    outs () << "Result: valid\n\nextracted skolem:\n";
+    u.serialize_formula(skol);
   };
 }
 
