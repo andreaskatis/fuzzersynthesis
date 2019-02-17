@@ -13,10 +13,17 @@ namespace ufo
   /** engine to solve validity of \forall-\exists formulas and synthesize Skolem relation */
   
   class AeValSolver {
+  public:
+    ExprVector getRandSanityExprs()
+    {
+      return randSanityExprs;
+    }
   private:
 
     Expr s;
     Expr t;
+    // Expr randInt;  //Andreas : random int term
+    // Expr randReal; // Same as above for reals
     ExprVector randSanityExprs; //Andreas : Vector with variables corresponding to random values
     ExprSet v; // existentially quantified vars
     ExprVector sVars;
@@ -298,147 +305,150 @@ namespace ufo
          (isOp<ComparissonOp>(ef) && isOp<BoolOp>(es));
     }
 
-    Expr getFinalAssignment (int i, Expr var, Expr& tmpSkol)
-    {
-      Expr assgn = defMap[var];
-      if (assgn != NULL) return assgn;
+// <<<<<<< HEAD
+//     Expr getFinalAssignment (int i, Expr var, Expr& tmpSkol)
+//     {
+//       Expr assgn = defMap[var];
+//       if (assgn != NULL) return assgn;
 
-      assgn = skolMaps[i][var];
-      if (assgn != NULL)
-        return getAssignmentForVar(var, assgn);
+//       assgn = skolMaps[i][var];
+//       if (assgn != NULL)
+//         return getAssignmentForVar(var, assgn);
 
-      ExprSet pre;
-      pre.insert(tmpSkol);
-      pre.insert(skolSkope);
-      pre.insert(t);
-      assgn = getCondDefinitionFormula(var, conjoin(pre, efac), false);
-      if (assgn != NULL)
-        return assgn;
+//       ExprSet pre;
+//       pre.insert(tmpSkol);
+//       pre.insert(skolSkope);
+//       pre.insert(t);
+//       assgn = getCondDefinitionFormula(var, conjoin(pre, efac), false);
+//       if (assgn != NULL)
+//         return assgn;
 
-      Expr eval = someEvals[i][var];
-      if (eval != NULL)
-        return eval->right();
+//       Expr eval = someEvals[i][var];
+//       if (eval != NULL)
+//         return eval->right();
 
-      return getDefaultAssignment(var);
-    }
+//       return getDefaultAssignment(var);
+//     }
 
-    void getCurrentLocalSkolem (int i)
-    {
-      ExprMap substsMap;
-      Expr tmpSkol = mk<TRUE>(efac); // needed only to get conditionals
+//     void getCurrentLocalSkolem (int i)
+//     {
+//       ExprMap substsMap;
+//       Expr tmpSkol = mk<TRUE>(efac); // needed only to get conditionals
 
-      // first, synthesize skolems from pieces determined by syntax or the MBP process
-      for (auto &var: v)
-      {
-        if (skolMaps[i][var] == NULL && defMap[var] == NULL) continue;
+//       // first, synthesize skolems from pieces determined by syntax or the MBP process
+//       for (auto &var: v)
+//       {
+//         if (skolMaps[i][var] == NULL && defMap[var] == NULL) continue;
 
-        Expr val = getFinalAssignment (i, var, tmpSkol);
-        tmpSkol = mk<AND>(tmpSkol, mk<EQ>(var, val));
-        substsMap[var] = val;
-      }
+//         Expr val = getFinalAssignment (i, var, tmpSkol);
+//         tmpSkol = mk<AND>(tmpSkol, mk<EQ>(var, val));
+//         substsMap[var] = val;
+//       }
 
-      // then, synthesize the rest
-      for (auto &var: v)
-      {
-        if (substsMap[var] != NULL) continue;
+//       // then, synthesize the rest
+//       for (auto &var: v)
+//       {
+//         if (substsMap[var] != NULL) continue;
 
-        Expr val = getFinalAssignment (i, var, tmpSkol);
-        tmpSkol = mk<AND>(tmpSkol, mk<EQ>(var, val));
-        substsMap[var] = val;
-      }
+//         Expr val = getFinalAssignment (i, var, tmpSkol);
+//         tmpSkol = mk<AND>(tmpSkol, mk<EQ>(var, val));
+//         substsMap[var] = val;
+//       }
 
-      // get rid of inter-dependencies cascadically:
+//       // get rid of inter-dependencies cascadically:
 
-      ExprVector cnjs;
-      ExprMap cyclicSubsts;
-      assignValues(substsMap, someEvals[i]);
-      splitDefs(substsMap, cyclicSubsts);
-      for (auto & a : cyclicSubsts)
-        substsMap[a.first] = someEvals[i][a.first]->right();
+//       ExprVector cnjs;
+//       ExprMap cyclicSubsts;
+//       assignValues(substsMap, someEvals[i]);
+//       splitDefs(substsMap, cyclicSubsts);
+//       for (auto & a : cyclicSubsts)
+//         substsMap[a.first] = someEvals[i][a.first]->right();
 
-      for (auto &var: v)
-      {
-        if (substsMap[var] != NULL)
-        {
-          assert(emptyIntersect(substsMap[var], v));
-          cnjs.push_back(mk<EQ>(var, substsMap[var]));
-          if (debug) outs() << "\ncompiling skolem [pt1]: " << *var <<  "    -->   " << *substsMap[var] << "\n";
-        }
-        else
-        {
-          assert(0);
-        }
-      }
+//       for (auto &var: v)
+//       {
+//         if (substsMap[var] != NULL)
+//         {
+//           assert(emptyIntersect(substsMap[var], v));
+//           cnjs.push_back(mk<EQ>(var, substsMap[var]));
+//           if (debug) outs() << "\ncompiling skolem [pt1]: " << *var <<  "    -->   " << *substsMap[var] << "\n";
+//         }
+//         else
+//         {
+//           assert(0);
+//         }
+//       }
 
-      instantiations.push_back(conjoin(cnjs, efac));
+//       instantiations.push_back(conjoin(cnjs, efac));
 
-      if (debug)
-      {
-        // outs() << "Sanity check [" << i << "]: " << u.implies(mk<AND>
-                  // (mk<AND>(s, skolSkope), mk<AND> (projections[i], instantiations[i])), t) << "\n";
+//       if (debug)
+//       {
+//         // outs() << "Sanity check [" << i << "]: " << u.implies(mk<AND>
+//                   // (mk<AND>(s, skolSkope), mk<AND> (projections[i], instantiations[i])), t) << "\n";
 
-      	//Andreas :
+//       	//Andreas :
       	
-      	Expr randSanityExpr = mk<TRUE>(efac);
-      	for (auto &var : randSanityExprs){
-      		bool isInt = bind::isIntConst(var);
-      		randSanityExpr = mk<AND>(randSanityExpr, var);
-      	}
+//       	Expr randSanityExpr = mk<TRUE>(efac);
+//       	for (auto &var : randSanityExprs){
+//       		bool isInt = bind::isIntConst(var);
+//       		randSanityExpr = mk<AND>(randSanityExpr, var);
+//       	}
 
-      	outs() << "MPB IS THE FOLLOWING : " << *projections[i] << "\n";
+//       	outs() << "MPB IS THE FOLLOWING : " << *projections[i] << "\n";
         
-        outs() << "Sanity check [" << i << "]: " << u.implies(mk<AND>
-        	(randSanityExpr, mk<AND>(mk<AND>(s, skolSkope), mk<AND> (projections[i], instantiations[i]))), t) << "\n";
-      }
-    }
+//         outs() << "Sanity check [" << i << "]: " << u.implies(mk<AND>
+//         	(randSanityExpr, mk<AND>(mk<AND>(s, skolSkope), mk<AND> (projections[i], instantiations[i]))), t) << "\n";
+//       }
+//     }
 
-    /**
-     * Global Skolem function from MBPs and local ones
-     */
-    Expr getSimpleSkolemFunction()
-    {
-      assert(skol);
+//     /**
+//      * Global Skolem function from MBPs and local ones
+//      */
+//     Expr getSimpleSkolemFunction()
+//     {
+//       assert(skol);
 
-      if (partitioning_size == 0)
-      {
-        if (debug) outs() << "WARNING: Skolem can be arbitrary\n";
-        return mk<TRUE>(efac);
-      }
+//       if (partitioning_size == 0)
+//       {
+//         if (debug) outs() << "WARNING: Skolem can be arbitrary\n";
+//         return mk<TRUE>(efac);
+//       }
 
-      for (int i = 0; i < partitioning_size; i++)
-      {
-        getCurrentLocalSkolem(i);
-      }
+//       for (int i = 0; i < partitioning_size; i++)
+//       {
+//         getCurrentLocalSkolem(i);
+//       }
 
-      Expr sk = mk<TRUE>(efac);
+//       Expr sk = mk<TRUE>(efac);
 
-      for (int i = partitioning_size - 1; i >= 0; i--)
-      {
-        if (isOpX<TRUE>(projections[i]) && isOpX<TRUE>(sk))
-          sk = instantiations[i];
-        else
-          sk = mk<ITE>(projections[i], instantiations[i], sk);
-      }
+//       for (int i = partitioning_size - 1; i >= 0; i--)
+//       {
+//         if (isOpX<TRUE>(projections[i]) && isOpX<TRUE>(sk))
+//           sk = instantiations[i];
+//         else
+//           sk = mk<ITE>(projections[i], instantiations[i], sk);
+//       }
 
-      Expr skol = simplifiedAnd(skolSkope, sk);
+//       Expr skol = simplifiedAnd(skolSkope, sk);
 
-      // if (debug) outs() << "Sanity check: " << u.implies(mk<AND>(s, skol), t) << "\n";
-      //Andreas : 
+//       // if (debug) outs() << "Sanity check: " << u.implies(mk<AND>(s, skol), t) << "\n";
+//       //Andreas : 
 
-      Expr randSanityExpr = mk<TRUE>(efac);
-      for (auto &var : randSanityExprs){
-		bool isInt = bind::isIntConst(var);
-  		randSanityExpr = mk<AND>(randSanityExpr, var);
-  	  }
+//       Expr randSanityExpr = mk<TRUE>(efac);
+//       for (auto &var : randSanityExprs){
+// 		bool isInt = bind::isIntConst(var);
+//   		randSanityExpr = mk<AND>(randSanityExpr, var);
+//   	  }
 
-      if (debug) outs() << "Sanity check: " << u.implies(mk<AND>
-                  (randSanityExpr, mk<AND>(s, skol)), t) << "\n";
+//       if (debug) outs() << "Sanity check: " << u.implies(mk<AND>
+//                   (randSanityExpr, mk<AND>(s, skol)), t) << "\n";
 
       
 
-      return skol;
-    }
+//       return skol;
+//     }
 
+// =======
+// >>>>>>> 8a6fce3c735915c65b7b5768c83e309897f38099
     /**
      * Valid Subset of S (if overall AE-formula is invalid)
      */
@@ -709,6 +719,7 @@ namespace ufo
     Expr plusEps(Expr e, bool isInt)
     {
 
+// <<<<<<< HEAD
       // if (isOpX<MPZ>(e) && isInt)
       //   return mkTerm (mpz_class (boost::lexical_cast<int> (e) + 1), efac);
 
@@ -779,6 +790,7 @@ namespace ufo
      */
     Expr minusEps(Expr e, bool isInt)
     {
+// <<<<<<< HEAD
       // if (isOpX<MPZ>(e) && isInt)
       //   return mkTerm (mpz_class (boost::lexical_cast<int> (e) - 1), efac);
 
@@ -890,8 +902,12 @@ namespace ufo
       }
       else if (isOpX<AND>(exp))
       {
+// <<<<<<< HEAD
       	//Andreas : this prevents having random values for closed bounds with numerals
         // exp = u.numericUnderapprox(exp); // try to see if there are only numerals
+// =======
+//         exp = u.numericUnderapprox(exp); // try to see if there are only numerals
+// >>>>>>> 8a6fce3c735915c65b7b5768c83e309897f38099
         if (isOpX<EQ>(exp)) return exp->right();
 
         bool incomplete = false;
@@ -2038,7 +2054,16 @@ namespace ufo
       }
 
       skol = mk<AND>(conjoin(skolUncond, efac), skolSkope);
-      if (debug) outs () << "Sanity check: " << u.implies(mk<AND>(s, skol), t) << "\n";
+      // if (debug) outs () << "Sanity check: " << u.implies(mk<AND>(s, skol), t) << "\n";
+
+      Expr randSanityExpr = mk<TRUE>(efac);
+      for (auto &var : randSanityExprs){
+		    bool isInt = bind::isIntConst(var);
+  		  randSanityExpr = mk<AND>(randSanityExpr, var);
+  	  }
+
+      if (debug) outs() << "Sanity check: " << u.implies(mk<AND>
+                  (randSanityExpr, mk<AND>(s, skol)), t) << "\n";
       return skol;
     }
 
@@ -2135,6 +2160,9 @@ namespace ufo
 
     Expr t_init = t;
     ExprVector skolems;
+
+    //Andreas
+    Expr randSanityExpr = mk<TRUE>(s->getFactory());
     while (true)
     {
       AeValSolver ae(s, t, t_quantified, debug, true);
@@ -2152,6 +2180,12 @@ namespace ufo
       } else {
         skolems.push_back(ae.getSkolemFunction(compact));
         t = mk<AND>(t, mk<NEG>(ae.getSkolemConstraints(0)));
+        //Andreas
+        ExprVector randSanityExprs = ae.getRandSanityExprs();
+        for (auto &var : randSanityExprs){
+          bool isInt = bind::isIntConst(var);
+          randSanityExpr = mk<AND>(randSanityExpr, var);
+        }
       }
     }
 
@@ -2166,10 +2200,15 @@ namespace ufo
                        skolems[i], skol);
       }
     }
+
+    
+
     if (debug)
     {
-      outs () << "Sanity check [all-inclusive]: " <<
-        u.implies(mk<AND>(s, skol), t_init) << "\n";
+      // outs () << "Sanity check [all-inclusive]: " <<
+      //   u.implies(mk<AND>(s, skol), t_init) << "\n";
+      outs() << "Sanity check [all-inclusive]: " << u.implies(mk<AND>
+                  (randSanityExpr, mk<AND>(s, skol)), t_init) << "\n";
     }
     outs () << "Result: valid\n\nextracted skolem:\n";
     u.serialize_formula(skol);
