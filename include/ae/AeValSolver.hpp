@@ -2096,7 +2096,7 @@ namespace ufo
   /**
    * Simple wrapper
    */
-  inline void aeSolveAndSkolemize(Expr s, Expr t, bool debug, bool skol, bool compact)
+  inline void aeSolveAndSkolemize(Expr s, Expr t, bool skol, bool debug, bool compact)
   {
     ExprSet s_vars;
     ExprSet t_vars;
