@@ -1,0 +1,20 @@
+; K = 2
+; Transition relation
+(define-fun T ((%init Bool) ($ccseti$0 Bool) ($ccsetd$0 Bool) ($ccr$0 Bool) ($V83_cca$0 Bool) ($OK$0 Bool) ($ccseti$1 Bool) ($ccsetd$1 Bool) ($ccr$1 Bool) ($V83_cca$1 Bool) ($OK$1 Bool)) Bool (= $OK$1 (ite (ite %init false (and $V83_cca$1 (not $V83_cca$0))) (or (or (ite %init false (and $ccseti$1 (not $ccseti$0))) (ite %init false (and $ccsetd$1 (not $ccsetd$0)))) (ite %init false (and $ccr$1 (not $ccr$0)))) true)))
+; Universally quantified variables
+(declare-fun $ccseti$~1 () Bool)
+(declare-fun $ccsetd$~1 () Bool)
+(declare-fun $ccr$~1 () Bool)
+(declare-fun $V83_cca$~1 () Bool)
+(declare-fun $OK$~1 () Bool)
+(declare-fun $ccseti$0 () Bool)
+(declare-fun $ccsetd$0 () Bool)
+(declare-fun $ccr$0 () Bool)
+(declare-fun $V83_cca$0 () Bool)
+(declare-fun $OK$0 () Bool)
+(declare-fun $ccseti$1 () Bool)
+(declare-fun $ccsetd$1 () Bool)
+(declare-fun $ccr$1 () Bool)
+(declare-fun $V83_cca$3 () Bool)
+(declare-fun $OK$3 () Bool)
+(assert (and (T false $ccseti$0 $ccsetd$0 $ccr$0 $V83_cca$0 $OK$0 $ccseti$1 $ccsetd$1 $ccr$1 $V83_cca$3 $OK$3) $OK$3))

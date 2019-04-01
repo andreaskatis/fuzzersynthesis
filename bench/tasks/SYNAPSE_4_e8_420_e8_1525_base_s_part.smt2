@@ -1,0 +1,23 @@
+; K = 1
+; Transition relation
+(define-fun T ((%init Bool) ($e_s1$0 Bool) ($e_s2$0 Bool) ($e_s3$0 Bool) ($init_invalid_s$0 Int) ($V28_valid_s$0 Int) ($V29_dirty_s$0 Int) ($OK$0 Bool) ($V31_env$0 Bool) ($V84_X$0 Bool) ($e_s1$1 Bool) ($e_s2$1 Bool) ($e_s3$1 Bool) ($init_invalid_s$1 Int) ($V28_valid_s$1 Int) ($V29_dirty_s$1 Int) ($OK$1 Bool) ($V31_env$1 Bool) ($V84_X$1 Bool)) Bool (and (= $OK$1 (or (=> $V31_env$1 (< $V29_dirty_s$1 1)) (< $V28_valid_s$1 1))) (= $V31_env$1 (ite %init $V84_X$1 (and $V84_X$1 $V31_env$0))) (= $V84_X$1 (and (not (and (and (and (and (and $e_s1$1 $e_s2$1) $e_s1$1) $e_s3$1) $e_s2$1) $e_s3$1)) (>= $init_invalid_s$1 0)))))
+; Universally quantified variables
+(declare-fun $e_s1$~1 () Bool)
+(declare-fun $e_s2$~1 () Bool)
+(declare-fun $e_s3$~1 () Bool)
+(declare-fun $init_invalid_s$~1 () Int)
+(declare-fun $V28_valid_s$~1 () Int)
+(declare-fun $V29_dirty_s$~1 () Int)
+(declare-fun $OK$~1 () Bool)
+(declare-fun $V31_env$~1 () Bool)
+(declare-fun $V84_X$~1 () Bool)
+(declare-fun $e_s1$0 () Bool)
+(declare-fun $e_s2$0 () Bool)
+(declare-fun $e_s3$0 () Bool)
+(declare-fun $init_invalid_s$0 () Int)
+(declare-fun $V28_valid_s$0 () Int)
+(declare-fun $V29_dirty_s$0 () Int)
+(declare-fun $OK$0 () Bool)
+(declare-fun $V31_env$0 () Bool)
+(declare-fun $V84_X$0 () Bool)
+(assert (T true $e_s1$~1 $e_s2$~1 $e_s3$~1 $init_invalid_s$~1 $V28_valid_s$~1 $V29_dirty_s$~1 $OK$~1 $V31_env$~1 $V84_X$~1 $e_s1$0 $e_s2$0 $e_s3$0 $init_invalid_s$0 $V28_valid_s$0 $V29_dirty_s$0 $OK$0 $V31_env$0 $V84_X$0))

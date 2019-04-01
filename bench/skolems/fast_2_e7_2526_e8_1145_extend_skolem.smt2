@@ -1,0 +1,72 @@
+(declare-fun $V85_p4$2 () Bool)
+(declare-fun $V83_p2$2 () Bool)
+(declare-fun $V82_p1$2 () Bool)
+(declare-fun $~flatten0$~1 () Bool)
+(declare-fun $V87_cca$2 () Bool)
+(declare-fun $cccanc$0 () Bool)
+(declare-fun $sdok$0 () Bool)
+(declare-fun $cconoff$0 () Bool)
+(declare-fun $vs$0 () Int)
+(declare-fun $qfok$0 () Bool)
+(declare-fun %init () Bool)
+(declare-fun $battok$0 () Bool)
+(declare-fun $cconoff$~1 () Bool)
+(declare-fun $igsw$~1 () Bool)
+(declare-fun $bpa$0 () Bool)
+(declare-fun $V84_p3$2 () Bool)
+(declare-fun $sdok$~1 () Bool)
+(declare-fun $ccd$0 () Bool)
+(declare-fun $gearok$0 () Bool)
+(declare-fun $accok$0 () Bool)
+(declare-fun $igsw$0 () Bool)
+(declare-fun $V86_ccont$2 () Bool)
+(declare-fun $V86_ccont$~1 () Bool)
+(declare-fun $OK$2 () Bool)
+
+(assert (let ((a!1 (and (not %init)
+                (or (and $igsw$0 (not $igsw$~1)) (and (not $igsw$0) $igsw$~1))))
+      (a!3 (not (and true
+                     (not $bpa$0)
+                     $battok$0
+                     $gearok$0
+                     $qfok$0
+                     (ite %init false (and $sdok$~1 $sdok$0))
+                     (<= 35 $vs$0)
+                     (<= $vs$0 200)
+                     (ite %init false (and $~flatten0$~1 $accok$0))
+                     (not $cccanc$0))))
+      (a!4 (ite %init
+                false
+                (or (and $igsw$0 (not $igsw$~1)) (and (not $igsw$0) $igsw$~1)))))
+(let ((a!2 (or (not (and (not %init) (not $V86_ccont$~1)))
+               (and (not a!1)
+                    (not $ccd$0)
+                    (not %init)
+                    $cconoff$0
+                    (not $cconoff$~1))))
+      (a!5 (and (not a!4)
+                (not $ccd$0)
+                (ite %init false (and $cconoff$0 (not $cconoff$~1)))))
+      (a!9 (= $OK$2 (and true (ite a!4 (not false) true)))))
+(let ((a!6 (ite (ite %init false (and true (not $V86_ccont$~1))) a!5 true))
+      (a!10 (and a!9
+                 (= $V82_p1$2 true)
+                 (= $V83_p2$2 true)
+                 (= $V84_p3$2 true)
+                 (= $V85_p4$2 (ite a!4 (not false) true))
+                 (= $V87_cca$2 false)
+                 (= $V86_ccont$2 false))))
+(let ((a!7 (= $OK$2
+              (and true
+                   (ite a!3 (not false) true)
+                   a!6
+                   (ite a!4 (not false) true)))))
+(let ((a!8 (and a!7
+                (= $V82_p1$2 true)
+                (= $V83_p2$2 (ite a!3 (not false) true))
+                (= $V84_p3$2 a!6)
+                (= $V85_p4$2 (ite a!4 (not false) true))
+                (= $V87_cca$2 false)
+                (= $V86_ccont$2 true))))
+  (ite a!2 a!8 a!10)))))))
+(check-sat)

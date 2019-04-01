@@ -1,0 +1,16 @@
+(declare-fun $V28_speed$3 () Int)
+(declare-fun $V33_env$3 () Bool)
+(declare-fun $V33_env$0 () Bool)
+(declare-fun $OK$3 () Bool)
+(declare-fun $s$1 () Bool)
+(declare-fun $V90_X$3 () Bool)
+(declare-fun $m$1 () Bool)
+
+(assert (let ((a!1 (not (and $V33_env$0 (not (and $m$1 $s$1)))))
+      (a!2 (= $V33_env$3 (and $V33_env$0 (not (and $m$1 $s$1))))))
+(let ((a!3 (and (= $OK$3 (or a!1 (< 3 4)))
+                a!2
+                (= $V28_speed$3 3)
+                (= $V90_X$3 (not (and $m$1 $s$1))))))
+  (ite (or (not $m$1) (not $s$1)) a!3 (ite (and $m$1 $s$1) a!3 true)))))
+(check-sat)
