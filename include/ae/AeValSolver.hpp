@@ -661,38 +661,120 @@ namespace ufo
         }
       }
     }
-
-    void GetSymbolicNeq(ExprSet& vec, Expr& lower, Expr& upper, Expr& candidate, bool strict, bool isInt)
+    void GetSymbolicNeq(ExprSet& vec, Expr& lower, Expr& upper, Expr& candidate, bool lflag, bool uflag, bool isInt)
+    // void GetSymbolicNeq(ExprSet& vec, Expr& lower, Expr& upper, Expr& candidate, bool strict, bool isInt)
     {
-      Expr var1 = lower;
-      Expr eps;
-      if (isInt)
-        eps = mkTerm (mpz_class (1), efac);
-      else
-        eps = mk<DIV>(mk<MINUS>(upper, lower), mkTerm (mpq_class (vec.size() + 2), efac));
-
-      if (strict) var1 = mk<PLUS>(var1, eps);
-
       string ind = lexical_cast<string> (fresh_var_ind++);
-      Expr varName = mkTerm ("_aeval_tmp_neg_" + ind, efac);
-      Expr var2 = isInt ? bind::intConst(varName) : bind::realConst(varName);
+      if (isInt)
+        {
+        ExprVector intArgs;
+        Expr randNameInt = mkTerm ("_aeval_tmp_randneq_int_" + ind, efac);
+        for (auto &a : vec) intArgs.push_back(sort::intTy (efac)); 
+        intArgs.push_back(sort::boolTy (efac));
+        intArgs.push_back(sort::boolTy (efac));
+        intArgs.push_back(sort::intTy (efac));
+        intArgs.push_back(sort::intTy (efac));
+        intArgs.push_back(sort::intTy (efac));
+        Expr randInt = bind::fdecl(randNameInt, intArgs);
 
-      candidate = var2;
-      for (int i = 0; i <= vec.size(); i++)
-      {
-        ExprSet neqqedConstrs;
-        for (auto &a : vec) neqqedConstrs.insert(mk<EQ>(a, var1));
+        ExprVector args;
+        for (auto &a : vec) args.push_back(a);
+        lflag ? args.push_back(mk<FALSE> (efac)) : args.push_back(mk<TRUE> (efac));
+        uflag ? args.push_back(mk<FALSE> (efac)) : args.push_back(mk<TRUE> (efac));
+        args.push_back(lower);
+        args.push_back(upper);
+        Expr randIntApp = bind::fapp(randInt, args);
 
-        string ind = lexical_cast<string> (fresh_var_ind++);
-        Expr varName = mkTerm ("_aeval_tmp_neg_" + ind, efac);
-        Expr newVar = isInt ? bind::intConst(varName) : bind::realConst(varName);
+        candidate = randIntApp;
 
-        Expr newConstr = mk<EQ>(var2, mk<ITE>(disjoin(neqqedConstrs, efac), newVar, var1));
-        skolSkope = simplifiedAnd(skolSkope, newConstr);
+        Expr lExpr;
+        Expr uExpr;
+        if (lflag) {
+          lExpr = mk<GEQ>(randIntApp, lower);
+        } else {
+          lExpr = mk<GT>(randIntApp, lower);
+        }
 
-        var1 = mk<PLUS>(var1, eps);
-        var2 = newVar;
+        if (uflag) {
+          uExpr = mk<LEQ>(randIntApp, upper);
+        } else {
+          uExpr = mk<LT>(randIntApp, upper);
+        }
+
+        randSanityExprs.push_back(mk<AND>(lExpr, uExpr));
+        for (auto &a : vec) randSanityExprs.push_back(mk<NEQ>(randIntApp, a));
+
+        // skolSkope = simplifiedAnd(skolSkope, randInt);
       }
+
+      else
+      {
+        ExprVector realArgs;
+        Expr randNameReal = mkTerm ("_aeval_tmp_randneq_real_" + ind, efac);
+        for (auto &a : vec) realArgs.push_back(sort::realTy (efac));
+        realArgs.push_back(sort::boolTy (efac));
+        realArgs.push_back(sort::boolTy (efac));
+        realArgs.push_back(sort::realTy (efac));
+        realArgs.push_back(sort::realTy (efac));
+        realArgs.push_back(sort::realTy (efac));
+        Expr randReal = bind::fdecl(randNameReal, realArgs);
+
+        ExprVector args;
+        lflag ? args.push_back(mk<FALSE> (efac)) : args.push_back(mk<TRUE> (efac));
+        uflag ? args.push_back(mk<FALSE> (efac)) : args.push_back(mk<TRUE> (efac));
+        args.push_back(lower);
+        args.push_back(upper);
+        Expr randRealApp = bind::fapp(randReal, args);
+        
+        candidate = randRealApp;
+        Expr lExpr;
+        Expr uExpr;
+        if (lflag) {
+          lExpr = mk<GT>(randRealApp, lower);
+        } else {
+          lExpr = mk<GEQ>(randRealApp, lower);
+        }
+
+        if (uflag) {
+          uExpr = mk<LT>(randRealApp, upper);
+        } else {
+          uExpr = mk<LEQ>(randRealApp, upper);
+        }
+
+        randSanityExprs.push_back(mk<AND>(lExpr, uExpr));
+        for (auto &a : vec) randSanityExprs.push_back(mk<NEQ>(randRealApp, a));
+        // skolSkope = simplifiedAnd(skolSkope, randReal);
+      }      
+      // Expr var1 = lower;
+      // Expr eps;
+      // if (isInt)
+      //   eps = mkTerm (mpz_class (1), efac);
+      // else
+      //   eps = mk<DIV>(mk<MINUS>(upper, lower), mkTerm (mpq_class (vec.size() + 2), efac));
+
+      // if (strict) var1 = mk<PLUS>(var1, eps);
+
+      // string ind = lexical_cast<string> (fresh_var_ind++);
+      // Expr varName = mkTerm ("_aeval_tmp_neg_" + ind, efac);
+      // Expr var2 = isInt ? bind::intConst(varName) : bind::realConst(varName);
+
+      // candidate = var2;
+      // for (int i = 0; i <= vec.size(); i++)
+      // {
+      //   ExprSet neqqedConstrs;
+      //   for (auto &a : vec) neqqedConstrs.insert(mk<EQ>(a, var1));
+
+      //   string ind = lexical_cast<string> (fresh_var_ind++);
+      //   Expr varName = mkTerm ("_aeval_tmp_neg_" + ind, efac);
+      //   Expr newVar = isInt ? bind::intConst(varName) : bind::realConst(varName);
+
+      //   Expr newConstr = mk<EQ>(var2, mk<ITE>(disjoin(neqqedConstrs, efac), newVar, var1));
+      //   outs() << "NEW CONSTRAINT IS: " << *newConstr << "\n";
+      //   skolSkope = simplifiedAnd(skolSkope, newConstr);
+
+      //   var1 = mk<PLUS>(var1, eps);
+      //   var2 = newVar;
+      // }
     }
 
     /**
@@ -866,7 +948,7 @@ namespace ufo
         assert(0);
       }
 
-//      if (debug) outs () << "getAssignmentForVar " << *var << " in:\n" << *exp << "\n";
+      if (debug) outs () << "getAssignmentForVar " << *var << " in:\n" << *exp << "\n";
 
       bool isInt = bind::isIntConst(var);
 
@@ -1727,7 +1809,8 @@ namespace ufo
         else curMin = curMinLE;
 
         Expr curMid;
-        GetSymbolicNeq(conjNEQ, curMax, curMin, curMid, (curMaxGE == NULL), isInt);
+        // GetSymbolicNeq(conjNEQ, curMax, curMin, curMid, (curMaxGE == NULL), isInt);
+        GetSymbolicNeq(conjNEQ, curMax, curMin, curMid, (curMaxGE == NULL), (curMinLE == NULL), isInt);
         return curMid;
       }
       return exp;
