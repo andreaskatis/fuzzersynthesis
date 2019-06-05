@@ -3,7 +3,7 @@ About
 
 
 Forked repository of the <a href="https://github.com/grigoryfedyukovich/aeval">AE-VAL Skolemizer</a>, enhanced with support for nondeterministic synthesis.
-
+To build from source, use the installation guide below. Otherwise, you can download a pre-built binary from the <a href="https://github.com/andrewkatis/fuzzersynthesis/releases">releases</a> page.
 
 Installation
 ============
