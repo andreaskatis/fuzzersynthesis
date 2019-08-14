@@ -56,13 +56,16 @@ int main (int argc, char ** argv)
   bool compact = getBoolValue("--compact", false, argc, argv);
   bool debug = getBoolValue("--debug", false, argc, argv);
 
+  //Andreas : option for nondeterministic synthesis
+  bool nondet = getBoolValue("--nondet", false, argc, argv);
+
   Expr s = z3_from_smtlib_file (z3, getSmtFileName(1, argc, argv));
   Expr t = z3_from_smtlib_file (z3, getSmtFileName(2, argc, argv));
 
   if (allincl)
-    getAllInclusiveSkolem(s, t, debug, compact);
+    getAllInclusiveSkolem(s, t, debug, compact, nondet);
   else
-    aeSolveAndSkolemize(s, t, skol, debug, compact);
+    aeSolveAndSkolemize(s, t, skol, debug, compact, nondet);
 
   return 0;
 }
