@@ -1,7 +1,9 @@
 About
 =====
 
-Skolemizer for AE-formulas in LIA/LRA based on the Expression library of <a href="http://seahorn.github.io/">SeaHorn</a> and the <a href="https://github.com/Z3Prover/z3">Z3</a> SMT solver. This is the main computational engine used in the Incremental Model Checking (<a href="http://www.inf.usi.ch/phd/fedyukovich/simabs_paper.pdf">LPAR'15</a>, <a href="http://www.inf.usi.ch/phd/fedyukovich/pde_paper.pdf">CAV'16</a>) and in the Program Synthesis from Assume-Guarantee contracts (<a href="https://arxiv.org/abs/1610.05867">preprint</a>).
+
+Forked repository of the <a href="https://github.com/grigoryfedyukovich/aeval">AE-VAL Skolemizer</a>, enhanced with support for nondeterministic synthesis.
+To build from source, use the installation guide below. Otherwise, you can download a pre-built binary from the <a href="https://github.com/andrewkatis/fuzzersynthesis/releases">releases</a> page.
 
 Installation
 ============
@@ -25,3 +27,5 @@ For example, if AE-VAL is run with the following input:
 `./build/tools/aeval/aeval bench/tasks/fast_1_e8_747_extend_s_part.smt2 bench/tasks/fast_1_e8_747_extend_t_part.smt2 `
 
 Then, the output is `Valid` and the synthesized skolem should be close enough to the formula in `bench/skolems/fast_1_e8_747_extend_skolem.smt2`.
+
+For a synthesized skolem that enables nondeterministic behavior, use option `--nondet`. 
