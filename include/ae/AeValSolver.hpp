@@ -767,8 +767,8 @@ namespace ufo
       {
       	//Andreas : the following line would prevent having random values for closed bounds containing numerals
         if (!nondet) {
-			exp = u.numericUnderapprox(exp); // try to see if there are only numerals
-		}
+          exp = u.numericUnderapprox(exp); // try to see if there are only numerals
+        }
         if (isOpX<EQ>(exp)) return exp->right();
 
         bool incomplete = false;
@@ -1037,14 +1037,14 @@ namespace ufo
 		            intArgs.push_back(sort::intTy (efac));
 		            Expr randInt = bind::fdecl(randNameInt, intArgs);
 
-		      		ExprVector args;
-	      			args.push_back(mk<TRUE>(efac));
-	      			args.push_back(mk<TRUE>(efac));
-	  				args.push_back(curMaxGE);
-			      	args.push_back(curMinLE);
-			  		Expr randIntApp = bind::fapp(randInt, args);
-			      	randSanityExprs.push_back(mk<AND>(mk<GEQ>(randIntApp, curMaxGE), mk<LEQ>(randIntApp, curMinLE)));
-		  	  		return randIntApp;
+  		      		ExprVector args;
+  	      			args.push_back(mk<TRUE>(efac));
+  	      			args.push_back(mk<TRUE>(efac));
+                args.push_back(curMaxGE);
+  			      	args.push_back(curMinLE);
+                Expr randIntApp = bind::fapp(randInt, args);
+  			      	randSanityExprs.push_back(mk<AND>(mk<GEQ>(randIntApp, curMaxGE), mk<LEQ>(randIntApp, curMinLE)));
+  		  	  		return randIntApp;
 	          	} else {
 	          		ExprVector realArgs;
 	            	Expr randNameReal = mkTerm ("_aeval_tmp_rand_real_" + ind, efac);
@@ -1056,11 +1056,11 @@ namespace ufo
 		            Expr randReal = bind::fdecl(randNameReal, realArgs);
 
 	  	      		ExprVector args;
-	         		args.push_back(mk<TRUE>(efac));
-	        		args.push_back(mk<TRUE>(efac));
+                args.push_back(mk<TRUE>(efac));
+                args.push_back(mk<TRUE>(efac));
 	  		  	   	args.push_back(curMaxGE);
-			        args.push_back(curMinLE);
-			  		Expr randRealApp = bind::fapp(randReal, args);
+                args.push_back(curMinLE);
+                Expr randRealApp = bind::fapp(randReal, args);
 		      	    randSanityExprs.push_back(mk<AND>(mk<GEQ>(randRealApp, curMaxGE), mk<LEQ>(randRealApp, curMinLE)));
 		  	  		  return randRealApp;
 	          	}

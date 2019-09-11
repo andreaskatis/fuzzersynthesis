@@ -58,7 +58,9 @@ int main (int argc, char ** argv)
 
   //Andreas : option for nondeterministic synthesis
   bool nondet = getBoolValue("--nondet", false, argc, argv);
-
+  if (nondet && !skol) {
+    skol = true;
+  }
   Expr s = z3_from_smtlib_file (z3, getSmtFileName(1, argc, argv));
   Expr t = z3_from_smtlib_file (z3, getSmtFileName(2, argc, argv));
 
