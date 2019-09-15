@@ -610,7 +610,7 @@ namespace ufo
     /**
      * Return "e + eps"
      */
-    Expr plusEps(Expr e, bool isInt)
+    Expr plusEps(Expr e, bool isInt, bool closed)
     {
   		if (nondet) {
       	string ind = lexical_cast<string> (fresh_var_ind++);
@@ -631,7 +631,11 @@ namespace ufo
           args.push_back(mkTerm (mpz_class (0), efac));
           args.push_back(mkTerm (mpz_class (0), efac));
           Expr randIntApp = bind::fapp(randInt, args);
-          randSanityExprs.push_back(mk<GT>(randIntApp, mkTerm (mpz_class (0), efac)));
+          if (closed) {
+            randSanityExprs.push_back(mk<GEQ>(randIntApp, mkTerm (mpz_class (0), efac)));
+          } else {
+            randSanityExprs.push_back(mk<GT>(randIntApp, mkTerm (mpz_class (0), efac)));
+          }
           return mk<PLUS>(e, randIntApp);	          
         } else {
           ExprVector realArgs;
@@ -649,8 +653,11 @@ namespace ufo
           args.push_back(mkTerm (mpq_class (0), efac));
           args.push_back(mkTerm (mpq_class (0), efac));
           Expr randRealApp = bind::fapp(randReal, args);
-          randSanityExprs.push_back(mk<GT>(randRealApp, mkTerm (mpq_class (0), efac)));
-
+          if (closed) {
+            randSanityExprs.push_back(mk<GEQ>(randRealApp, mkTerm (mpq_class (0), efac)));
+          } else {
+            randSanityExprs.push_back(mk<GT>(randRealApp, mkTerm (mpq_class (0), efac)));
+          }
           return mk<PLUS>(e, randRealApp);
         }
   		} else {
@@ -663,7 +670,7 @@ namespace ufo
     /**
      * Return "e - eps"
      */
-    Expr minusEps(Expr e, bool isInt)
+    Expr minusEps(Expr e, bool isInt, bool closed)
     {
     	if (nondet) {
 		  string ind = lexical_cast<string> (fresh_var_ind++);
@@ -683,7 +690,11 @@ namespace ufo
 	        args.push_back(mkTerm (mpz_class (0), efac));
 	        args.push_back(mkTerm (mpz_class (0), efac));
 	        Expr randIntApp = bind::fapp(randInt, args);
-	        randSanityExprs.push_back(mk<GT>(randIntApp, mkTerm (mpz_class (0), efac)));
+          if (closed) {
+            randSanityExprs.push_back(mk<GEQ>(randIntApp, mkTerm (mpz_class (0), efac)));
+          } else {
+  	        randSanityExprs.push_back(mk<GT>(randIntApp, mkTerm (mpz_class (0), efac)));
+          }
 	        return mk<MINUS>(e, randIntApp);
 	      } else {
 	        ExprVector realArgs;
@@ -701,8 +712,12 @@ namespace ufo
 	        args.push_back(mkTerm (mpq_class (0), efac));
 	        args.push_back(mkTerm (mpq_class (0), efac));
 	        Expr randRealApp = bind::fapp(randReal, args);
-	        randSanityExprs.push_back(mk<GT>(randRealApp, mkTerm (mpq_class (0), efac)));
-	        return mk<MINUS>(e, randRealApp);       
+          if (closed) {
+            randSanityExprs.push_back(mk<GEQ>(randRealApp, mkTerm (mpq_class (0), efac)));
+          } else {
+            randSanityExprs.push_back(mk<GT>(randRealApp, mkTerm (mpq_class (0), efac)));
+	        }
+          return mk<MINUS>(e, randRealApp);       
 	      }
   		} else {
         if (isOpX<MPZ>(e) && isInt)
@@ -742,25 +757,36 @@ namespace ufo
         // TODO: write a similar simplifier fo booleans
 
         assert (var == exp->left());
-
-        if (isOpX<EQ>(exp) || isOpX<GEQ>(exp) || isOpX<LEQ>(exp)){
+        if (isOp<EQ>(exp)) {
           if (exp->left() == exp->right()) return getDefaultAssignment(var);
           return exp->right();
         }
+        else if ((isOpX<GEQ>(exp) || isOpX<LEQ>(exp))) {
+          if (nondet) {
+            if (isOpX<GEQ>(exp)) {
+              return plusEps(exp->right(), isInt, true);
+            } else {
+              return minusEps(exp->right(), isInt, true);
+            }
+          } else {
+            if (exp->left() == exp->right()) return getDefaultAssignment(var);
+            return exp->right();          
+          }
+        }  
         else if (isOpX<LT>(exp)){
-          return minusEps (exp->right(), isInt);
+          return minusEps (exp->right(), isInt, false);
         }
         else if (isOpX<GT>(exp)){
-          return plusEps (exp->right(), isInt);
+          return plusEps (exp->right(), isInt, false);
         }
         else if (isOpX<NEQ>(exp)){
-          return plusEps (exp->right(), isInt);
+          return plusEps (exp->right(), isInt, false);
         }
         else assert(0);
       }
       else if (isOpX<NEG>(exp)){
         if (isOpX<EQ>(exp->left())) {
-          return plusEps (getAssignmentForVar(var, exp->left()), isInt);
+          return plusEps (getAssignmentForVar(var, exp->left()), isInt, false);
         }
       }
       else if (isOpX<AND>(exp))
@@ -954,22 +980,22 @@ namespace ufo
         {
           if (curMinLT != NULL && curMinLE == NULL && curMaxGT == NULL && curMaxGE == NULL)
           {
-            return minusEps(curMinLT, isInt);
+            return minusEps(curMinLT, isInt, false);
           }
 
           if (curMinLT == NULL && curMinLE == NULL && curMaxGT != NULL && curMaxGE == NULL)
           {
-            return plusEps(curMaxGT, isInt);
+            return plusEps(curMaxGT, isInt, false);
           }
 
           if (curMinLT != NULL && curMinLE != NULL && curMaxGT == NULL && curMaxGE == NULL)
           {
-            return minusEps(curMin, isInt);
+            return minusEps(curMin, isInt, false);
           }
 
           if (curMinLT == NULL && curMinLE == NULL && curMaxGT != NULL && curMaxGE != NULL)
           {
-            return plusEps(curMax, isInt);
+            return plusEps(curMax, isInt, false);
           }
 
           if (curMinLT != NULL && curMinLE == NULL && curMaxGT != NULL && curMaxGE == NULL)
@@ -1441,12 +1467,20 @@ namespace ufo
           // Andreas : These were the first checks in this block.
           if (curMinLT == NULL && curMinLE != NULL)
           {
-            return curMinLE;
+            if (nondet) {
+              return minusEps(curMinLE, isInt, true);
+            } else {
+              return curMinLE;
+            }
           }
 
           if (curMaxGT == NULL && curMaxGE != NULL)
           {
-            return curMaxGE;
+            if (nondet) {
+              return plusEps(curMaxGE, isInt, true);
+            } else {
+              return curMaxGE;
+            }
           }
 
           assert(0);
@@ -1460,37 +1494,37 @@ namespace ufo
         GetSymbolicMax(conjNEQ, tmpMax, isInt);
         if (curMinLE == NULL && curMinLT == NULL && curMaxGE == NULL && curMaxGT == NULL)
         {
-          return plusEps(tmpMax, isInt);
+          return plusEps(tmpMax, isInt, false);
         }
 
         if (curMinLE != NULL && curMinLT == NULL && curMaxGE == NULL && curMaxGT == NULL)
         {
-          return minusEps(mk<ITE>(mk<LT>(curMinLE, tmpMin), curMinLE, tmpMin), isInt);
+          return minusEps(mk<ITE>(mk<LT>(curMinLE, tmpMin), curMinLE, tmpMin), isInt, false);
         }
 
         if (curMinLE == NULL && curMinLT != NULL && curMaxGE == NULL && curMaxGT == NULL)
         {
-          return minusEps(mk<ITE>(mk<LT>(curMinLT, tmpMin), curMinLT, tmpMin), isInt);
+          return minusEps(mk<ITE>(mk<LT>(curMinLT, tmpMin), curMinLT, tmpMin), isInt, false);
         }
 
         if (curMinLE != NULL && curMinLT != NULL && curMaxGE == NULL && curMaxGT == NULL)
         {
-          return minusEps(mk<ITE>(mk<LT>(curMin, tmpMin), curMin, tmpMin), isInt);
+          return minusEps(mk<ITE>(mk<LT>(curMin, tmpMin), curMin, tmpMin), isInt, false);
         }
 
         if (curMinLE == NULL && curMinLT == NULL && curMaxGE != NULL && curMaxGT == NULL)
         {
-          return plusEps(mk<ITE>(mk<GT>(curMaxGE, tmpMax), curMaxGE, tmpMax), isInt);
+          return plusEps(mk<ITE>(mk<GT>(curMaxGE, tmpMax), curMaxGE, tmpMax), isInt, false);
         }
 
         if (curMinLE == NULL && curMinLT == NULL && curMaxGE == NULL && curMaxGT != NULL)
         {
-          return plusEps(mk<ITE>(mk<GT>(curMaxGT, tmpMax), curMaxGT, tmpMax), isInt);
+          return plusEps(mk<ITE>(mk<GT>(curMaxGT, tmpMax), curMaxGT, tmpMax), isInt, false);
         }
 
         if (curMinLE == NULL && curMinLT == NULL && curMaxGE != NULL && curMaxGT != NULL)
         {
-          return plusEps(mk<ITE>(mk<GT>(curMax, tmpMax), curMax, tmpMax), isInt);
+          return plusEps(mk<ITE>(mk<GT>(curMax, tmpMax), curMax, tmpMax), isInt, false);
         }
 
         assert (curMinLE != NULL || curMinLT != NULL);
