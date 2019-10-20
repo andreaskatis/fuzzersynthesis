@@ -600,11 +600,105 @@ namespace ufo
      * Based on type
      */
     Expr getDefaultAssignment(Expr var)
-    {
+    { 
+      if (nondet) {
+        return getUnconstrainedAssignment(var);
+      } else {
       if (bind::isBoolConst(var)) return mk<TRUE>(efac);
       if (bind::isIntConst(var)) return mkTerm (mpz_class (0), efac);
       else           // that is, isRealConst(var) == true
         return mkTerm (mpq_class (0), efac);
+      }
+    }
+
+    //Andreas : returns application of urng with unconstrained bounds
+    Expr getUnconstrainedAssignment(Expr var)
+    {
+      bool isInt = bind::isIntConst(var);
+      string ind = lexical_cast<string> (fresh_var_ind++);
+      string minind = lexical_cast<string> (fresh_var_ind++);
+      string maxind = lexical_cast<string> (fresh_var_ind++);
+
+      if (isInt) {
+          ExprVector intArgs;
+          Expr randNameInt = mkTerm ("_aeval_tmp_rand_int_" + ind, efac); 
+          intArgs.push_back(sort::boolTy (efac));
+          intArgs.push_back(sort::boolTy (efac));
+          intArgs.push_back(sort::intTy (efac));
+          intArgs.push_back(sort::intTy (efac));
+          intArgs.push_back(sort::intTy (efac));
+          Expr randInt = bind::fdecl(randNameInt, intArgs);
+          ExprVector args;
+          //Andreas : testing closed unconstrained bounds
+          // if (closed) {
+            args.push_back(mk<TRUE>(efac));
+          // } else {
+            // args.push_back(mk<FALSE>(efac));
+          // }
+          // args.push_back(mk<FALSE>(efac));
+          args.push_back(mk<TRUE>(efac));
+          
+          ExprVector unboundedArgs;
+          unboundedArgs.push_back(sort::intTy (efac));
+          Expr randNameMinInt = mkTerm("_aeval_tmp_unbounded_min_" + minind, efac);
+          Expr randNameMaxInt = mkTerm("_aeval_tmp_unbounded_max_" + maxind, efac);
+          Expr randMinInt = bind::intConst(randNameMinInt);
+          //, unboundedArgs);
+          Expr randMaxInt = bind::intConst(randNameMaxInt);
+          //, unboundedArgs);
+
+          args.push_back(randMinInt);
+          args.push_back(randMaxInt);
+          // args.push_back(mkTerm (mpz_class (0), efac));
+          // args.push_back(mkTerm (mpz_class (0), efac));
+          // Expr randMinApp = bind::fapp(randMinInt);
+          // Expr randMaxApp = bind::fapp(randMaxInt);
+          Expr randIntApp = bind::fapp(randInt, args);
+          // if (closed) {
+          randSanityExprs.push_back(mk<AND>(mk<GEQ>(randIntApp, randMinInt), mk<LEQ>(randIntApp, randMaxInt)));
+          // } else {
+            // randSanityExprs.push_back(mk<GT>(randIntApp, mkTerm (mpz_class (0), efac)));
+          // }
+          return randIntApp;
+        } else {
+          ExprVector realArgs;
+          Expr randNameReal = mkTerm ("_aeval_tmp_rand_real_" + ind, efac); 
+          realArgs.push_back(sort::boolTy (efac));
+          realArgs.push_back(sort::boolTy (efac));
+          realArgs.push_back(sort::realTy (efac));
+          realArgs.push_back(sort::realTy (efac));
+          realArgs.push_back(sort::realTy (efac));
+          Expr randReal = bind::fdecl(randNameReal, realArgs);
+          ExprVector args;
+          //Andreas : testing closed unconstrained bounds
+          // if (closed) {
+            args.push_back(mk<TRUE>(efac));
+          // } else {
+            // args.push_back(mk<FALSE>(efac));
+          // }
+          // args.push_back(mk<FALSE>(efac));
+          args.push_back(mk<TRUE>(efac));
+          
+          ExprVector unboundedArgs;
+          unboundedArgs.push_back(sort::realTy (efac));
+          Expr randNameMinReal = mkTerm("_aeval_tmp_unbounded_min_" + minind, efac);
+          Expr randNameMaxReal = mkTerm("_aeval_tmp_unbounded_max_" + maxind, efac);
+          Expr randMinReal = bind::realConst(randNameMinReal);
+          //, unboundedArgs);
+          Expr randMaxReal = bind::realConst(randNameMaxReal);
+          //, unboundedArgs);
+
+          args.push_back(randMinReal);
+          args.push_back(randMaxReal);
+          // args.push_back(mkTerm (mpz_class (0), efac));
+          // args.push_back(mkTerm (mpz_class (0), efac));
+          Expr randMinApp = bind::fapp(randMinReal, unboundedArgs);
+          Expr randMaxApp = bind::fapp(randMaxReal, unboundedArgs);
+          Expr randRealApp = bind::fapp(randReal, args);
+          // if (closed) {
+          randSanityExprs.push_back(mk<AND>(mk<GEQ>(randRealApp, randMinReal), mk<LEQ>(randRealApp, randMaxReal)));
+          return randRealApp;
+        }
     }
 
     /**
@@ -623,10 +717,12 @@ namespace ufo
           intArgs.push_back(sort::intTy (efac));
           intArgs.push_back(sort::intTy (efac));
           Expr randInt = bind::fdecl(randNameInt, intArgs);
-
-
           ExprVector args;
-          args.push_back(mk<FALSE>(efac));
+          if (closed) {
+            args.push_back(mk<TRUE>(efac));
+          } else {
+            args.push_back(mk<FALSE>(efac));
+          }
           args.push_back(mk<FALSE>(efac));
           args.push_back(mkTerm (mpz_class (0), efac));
           args.push_back(mkTerm (mpz_class (0), efac));
@@ -648,7 +744,11 @@ namespace ufo
           Expr randReal = bind::fdecl(randNameReal, realArgs);
 
           ExprVector args;
-          args.push_back(mk<FALSE>(efac));
+          if (closed) {
+            args.push_back(mk<TRUE>(efac));
+          } else {
+            args.push_back(mk<FALSE>(efac));
+          }
           args.push_back(mk<FALSE>(efac));
           args.push_back(mkTerm (mpq_class (0), efac));
           args.push_back(mkTerm (mpq_class (0), efac));
@@ -685,7 +785,11 @@ namespace ufo
 	        Expr randInt = bind::fdecl(randNameInt, intArgs);
 
 	        ExprVector args;
-	        args.push_back(mk<FALSE>(efac));
+          if (closed) {
+            args.push_back(mk<TRUE>(efac));
+          } else {
+            args.push_back(mk<FALSE>(efac));
+          }
 	        args.push_back(mk<FALSE>(efac));
 	        args.push_back(mkTerm (mpz_class (0), efac));
 	        args.push_back(mkTerm (mpz_class (0), efac));
@@ -707,7 +811,11 @@ namespace ufo
 	        Expr randReal = bind::fdecl(randNameReal, realArgs);
 
 	        ExprVector args;
-	        args.push_back(mk<FALSE>(efac));
+          if (closed) {
+            args.push_back(mk<TRUE>(efac));
+          } else {
+            args.push_back(mk<FALSE>(efac));
+          }
 	        args.push_back(mk<FALSE>(efac));
 	        args.push_back(mkTerm (mpq_class (0), efac));
 	        args.push_back(mkTerm (mpq_class (0), efac));
@@ -744,10 +852,7 @@ namespace ufo
         assert(0);
       }
 
-      // if (debug) outs () << "getAssignmentForVar " << *var << " in:\n" << *exp << "\n";
-
       bool isInt = bind::isIntConst(var);
-
       if (isOp<ComparissonOp>(exp))
       {
         if (isOpX<NEG>(exp)) exp = mkNeg(exp->left());
@@ -755,7 +860,6 @@ namespace ufo
         if (!bind::isBoolConst(var) && var != exp->left())
           exp = ineqReverter(ineqMover(exp, var));
         // TODO: write a similar simplifier fo booleans
-
         assert (var == exp->left());
         if (isOp<EQ>(exp)) {
           if (exp->left() == exp->right()) return getDefaultAssignment(var);
@@ -764,9 +868,105 @@ namespace ufo
         else if ((isOpX<GEQ>(exp) || isOpX<LEQ>(exp))) {
           if (nondet) {
             if (isOpX<GEQ>(exp)) {
-              return plusEps(exp->right(), isInt, true);
+              string ind = lexical_cast<string> (fresh_var_ind++);
+              string maxind = lexical_cast<string> (fresh_var_ind++);
+                if (isInt) {
+                    ExprVector intArgs;          
+                    Expr randNameInt = mkTerm ("_aeval_tmp_rand_int_" + ind, efac);
+                    intArgs.push_back(sort::boolTy (efac));
+                    intArgs.push_back(sort::boolTy (efac));
+                    intArgs.push_back(sort::intTy (efac));
+                    intArgs.push_back(sort::intTy (efac));
+                    intArgs.push_back(sort::intTy (efac));
+                    Expr randInt = bind::fdecl(randNameInt, intArgs);
+
+                    ExprVector unboundedArgs;
+                    unboundedArgs.push_back(sort::intTy (efac));
+                    Expr randNameMaxInt = mkTerm("_aeval_tmp_unbounded_max_" + maxind, efac);
+                    Expr randMaxInt = bind::intConst(randNameMaxInt);
+
+                    ExprVector args;
+                    args.push_back(mk<TRUE>(efac));
+                    args.push_back(mk<TRUE>(efac));
+                    args.push_back(exp->right());
+                    args.push_back(randMaxInt);
+                    Expr randIntApp = bind::fapp(randInt, args);
+                    randSanityExprs.push_back(mk<AND>(mk<GEQ>(randIntApp, exp->right()), mk<LEQ>(randIntApp, randMaxInt)));
+                    return randIntApp;
+                } else {
+                    ExprVector realArgs;          
+                    Expr randNameReal = mkTerm ("_aeval_tmp_rand_real_" + ind, efac);
+                    realArgs.push_back(sort::boolTy (efac));
+                    realArgs.push_back(sort::boolTy (efac));
+                    realArgs.push_back(sort::realTy (efac));
+                    realArgs.push_back(sort::realTy (efac));
+                    realArgs.push_back(sort::realTy (efac));
+                    Expr randReal = bind::fdecl(randNameReal, realArgs);
+
+                    ExprVector unboundedArgs;
+                    unboundedArgs.push_back(sort::realTy (efac));
+                    Expr randNameMaxReal = mkTerm("_aeval_tmp_unbounded_max_" + maxind, efac);
+                    Expr randMaxReal = bind::realConst(randNameMaxReal);
+
+                    ExprVector args;
+                    args.push_back(mk<TRUE>(efac));
+                    args.push_back(mk<TRUE>(efac));
+                    args.push_back(exp->right());
+                    args.push_back(randMaxReal);
+                    Expr randRealApp = bind::fapp(randReal, args);
+                    randSanityExprs.push_back(mk<AND>(mk<GEQ>(randRealApp, exp->right()), mk<LEQ>(randRealApp, randMaxReal)));
+                    return randRealApp;
+              }
             } else {
-              return minusEps(exp->right(), isInt, true);
+              string ind = lexical_cast<string> (fresh_var_ind++);
+              string minind = lexical_cast<string> (fresh_var_ind++);
+              if (isInt) {
+                  ExprVector intArgs;          
+                  Expr randNameInt = mkTerm ("_aeval_tmp_rand_int_" + ind, efac);
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  Expr randInt = bind::fdecl(randNameInt, intArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::intTy (efac));
+                  Expr randNameMinInt = mkTerm("_aeval_tmp_unbounded_min_" + minind, efac);
+                  Expr randMinInt = bind::intConst(randNameMinInt);
+
+                  ExprVector args;
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(randMinInt);
+                  args.push_back(exp->right());
+                  Expr randIntApp = bind::fapp(randInt, args);
+                  randSanityExprs.push_back(mk<AND>(mk<GEQ>(randIntApp, randMinInt), mk<LEQ>(randIntApp, exp->right())));
+                  return randIntApp;
+              } else {
+                  ExprVector realArgs;          
+                  Expr randNameReal = mkTerm ("_aeval_tmp_rand_real_" + ind, efac);
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  Expr randReal = bind::fdecl(randNameReal, realArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::realTy (efac));
+                  Expr randNameMinReal = mkTerm("_aeval_tmp_unbounded_min_" + minind, efac);
+                  Expr randMinReal = bind::realConst(randNameMinReal);
+
+                  ExprVector args;
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(randMinReal);
+                  args.push_back(exp->right());
+                  Expr randRealApp = bind::fapp(randReal, args);
+                  randSanityExprs.push_back(mk<AND>(mk<GEQ>(randRealApp, randMinReal), mk<LEQ>(randRealApp, exp->right())));
+                  return randRealApp;
+              }
             }
           } else {
             if (exp->left() == exp->right()) return getDefaultAssignment(var);
@@ -774,10 +974,114 @@ namespace ufo
           }
         }  
         else if (isOpX<LT>(exp)){
-          return minusEps (exp->right(), isInt, false);
+          if (nondet) {
+              string ind = lexical_cast<string> (fresh_var_ind++);
+              string minind = lexical_cast<string> (fresh_var_ind++);
+              if (isInt) {
+                  ExprVector intArgs;          
+                  Expr randNameInt = mkTerm ("_aeval_tmp_rand_int_" + ind, efac);
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  Expr randInt = bind::fdecl(randNameInt, intArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::intTy (efac));
+                  Expr randNameMinInt = mkTerm("_aeval_tmp_unbounded_min_" + minind, efac);
+                  Expr randMinInt = bind::intConst(randNameMinInt);
+
+                  ExprVector args;
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(mk<FALSE>(efac));
+                  args.push_back(randMinInt);
+                  args.push_back(exp->right());
+                  Expr randIntApp = bind::fapp(randInt, args);
+                  randSanityExprs.push_back(mk<AND>(mk<GEQ>(randIntApp, randMinInt), mk<LT>(randIntApp, exp->right())));
+                  return randIntApp;
+              } else {
+                  ExprVector realArgs;          
+                  Expr randNameReal = mkTerm ("_aeval_tmp_rand_real_" + ind, efac);
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  Expr randReal = bind::fdecl(randNameReal, realArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::realTy (efac));
+                  Expr randNameMinReal = mkTerm("_aeval_tmp_unbounded_min_" + minind, efac);
+                  Expr randMinReal = bind::realConst(randNameMinReal);
+
+                  ExprVector args;
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(mk<FALSE>(efac));
+                  args.push_back(randMinReal);
+                  args.push_back(exp->right());
+                  Expr randRealApp = bind::fapp(randReal, args);
+                  randSanityExprs.push_back(mk<AND>(mk<GEQ>(randRealApp, randMinReal), mk<LT>(randRealApp, exp->right())));
+                  return randRealApp;
+              }
+          } else {
+            return minusEps (exp->right(), isInt, false);
+          }
         }
         else if (isOpX<GT>(exp)){
-          return plusEps (exp->right(), isInt, false);
+          if (nondet) {
+            string ind = lexical_cast<string> (fresh_var_ind++);
+            string maxind = lexical_cast<string> (fresh_var_ind++);
+              if (isInt) {
+                  ExprVector intArgs;          
+                  Expr randNameInt = mkTerm ("_aeval_tmp_rand_int_" + ind, efac);
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  Expr randInt = bind::fdecl(randNameInt, intArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::intTy (efac));
+                  Expr randNameMaxInt = mkTerm("_aeval_tmp_unbounded_max_" + maxind, efac);
+                  Expr randMaxInt = bind::intConst(randNameMaxInt);
+
+                  ExprVector args;
+                  args.push_back(mk<FALSE>(efac));
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(exp->right());
+                  args.push_back(randMaxInt);
+                  Expr randIntApp = bind::fapp(randInt, args);
+                  randSanityExprs.push_back(mk<AND>(mk<GT>(randIntApp, exp->right()), mk<LEQ>(randIntApp, randMaxInt)));
+                  return randIntApp;
+              } else {
+                  ExprVector realArgs;          
+                  Expr randNameReal = mkTerm ("_aeval_tmp_rand_real_" + ind, efac);
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  Expr randReal = bind::fdecl(randNameReal, realArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::realTy (efac));
+                  Expr randNameMaxReal = mkTerm("_aeval_tmp_unbounded_max_" + maxind, efac);
+                  Expr randMaxReal = bind::realConst(randNameMaxReal);
+
+                  ExprVector args;
+                  args.push_back(mk<FALSE>(efac));
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(exp->right());
+                  args.push_back(randMaxReal);
+                  Expr randRealApp = bind::fapp(randReal, args);
+                  randSanityExprs.push_back(mk<AND>(mk<GEQ>(randRealApp, exp->right()), mk<LEQ>(randRealApp, randMaxReal)));
+                  return randRealApp;
+              }
+            } else {
+              return plusEps (exp->right(), isInt, false);
+            }
         }
         else if (isOpX<NEQ>(exp)){
           return plusEps (exp->right(), isInt, false);
@@ -980,22 +1284,236 @@ namespace ufo
         {
           if (curMinLT != NULL && curMinLE == NULL && curMaxGT == NULL && curMaxGE == NULL)
           {
-            return minusEps(curMinLT, isInt, false);
+            if (nondet) {
+              string ind = lexical_cast<string> (fresh_var_ind++);
+              string minind = lexical_cast<string> (fresh_var_ind++);
+              if (isInt) {
+                  ExprVector intArgs;          
+                  Expr randNameInt = mkTerm ("_aeval_tmp_rand_int_" + ind, efac);
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  Expr randInt = bind::fdecl(randNameInt, intArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::intTy (efac));
+                  Expr randNameMinInt = mkTerm("_aeval_tmp_unbounded_min_" + minind, efac);
+                  Expr randMinInt = bind::intConst(randNameMinInt);
+
+                  ExprVector args;
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(mk<FALSE>(efac));
+                  args.push_back(randMinInt);
+                  args.push_back(curMinLT);
+                  Expr randIntApp = bind::fapp(randInt, args);
+                  randSanityExprs.push_back(mk<AND>(mk<GEQ>(randIntApp, randMinInt), mk<LT>(randIntApp, curMinLT)));
+                  return randIntApp;
+              } else {
+                  ExprVector realArgs;          
+                  Expr randNameReal = mkTerm ("_aeval_tmp_rand_real_" + ind, efac);
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  Expr randReal = bind::fdecl(randNameReal, realArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::realTy (efac));
+                  Expr randNameMinReal = mkTerm("_aeval_tmp_unbounded_min_" + minind, efac);
+                  Expr randMinReal = bind::realConst(randNameMinReal);
+
+                  ExprVector args;
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(mk<FALSE>(efac));
+                  args.push_back(randMinReal);
+                  args.push_back(curMinLT);
+                  Expr randRealApp = bind::fapp(randReal, args);
+                  randSanityExprs.push_back(mk<AND>(mk<GEQ>(randRealApp, randMinReal), mk<LT>(randRealApp, curMinLT)));
+                  return randRealApp;
+              }
+            } else {
+              return minusEps(curMinLT, isInt, false);
+            }
           }
 
           if (curMinLT == NULL && curMinLE == NULL && curMaxGT != NULL && curMaxGE == NULL)
           {
-            return plusEps(curMaxGT, isInt, false);
+            if (nondet) {
+              string ind = lexical_cast<string> (fresh_var_ind++);
+              string minind = lexical_cast<string> (fresh_var_ind++);
+              if (isInt) {
+                  ExprVector intArgs;          
+                  Expr randNameInt = mkTerm ("_aeval_tmp_rand_int_" + ind, efac);
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  Expr randInt = bind::fdecl(randNameInt, intArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::intTy (efac));
+                  Expr randNameMinInt = mkTerm("_aeval_tmp_unbounded_min_" + minind, efac);
+                  Expr randMinInt = bind::intConst(randNameMinInt);
+
+                  ExprVector args;
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(mk<FALSE>(efac));
+                  args.push_back(randMinInt);
+                  args.push_back(curMinLT);
+                  Expr randIntApp = bind::fapp(randInt, args);
+                  randSanityExprs.push_back(mk<AND>(mk<GEQ>(randIntApp, randMinInt), mk<LT>(randIntApp, curMinLT)));
+                  return randIntApp;
+              } else {
+                  ExprVector realArgs;          
+                  Expr randNameReal = mkTerm ("_aeval_tmp_rand_real_" + ind, efac);
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  Expr randReal = bind::fdecl(randNameReal, realArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::realTy (efac));
+                  Expr randNameMinReal = mkTerm("_aeval_tmp_unbounded_min_" + minind, efac);
+                  Expr randMinReal = bind::realConst(randNameMinReal);
+
+                  ExprVector args;
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(mk<FALSE>(efac));
+                  args.push_back(randMinReal);
+                  args.push_back(curMinLT);
+                  Expr randRealApp = bind::fapp(randReal, args);
+                  randSanityExprs.push_back(mk<AND>(mk<GEQ>(randRealApp, randMinReal), mk<LT>(randRealApp, curMinLT)));
+                  return randRealApp;
+              }
+            } else {
+              return plusEps(curMaxGT, isInt, false);
+            }
           }
 
           if (curMinLT != NULL && curMinLE != NULL && curMaxGT == NULL && curMaxGE == NULL)
           {
-            return minusEps(curMin, isInt, false);
+            if (nondet) {
+              string ind = lexical_cast<string> (fresh_var_ind++);
+              string minind = lexical_cast<string> (fresh_var_ind++);
+              if (isInt) {
+                  ExprVector intArgs;          
+                  Expr randNameInt = mkTerm ("_aeval_tmp_rand_int_" + ind, efac);
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  Expr randInt = bind::fdecl(randNameInt, intArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::intTy (efac));
+                  Expr randNameMinInt = mkTerm("_aeval_tmp_unbounded_min_" + minind, efac);
+                  Expr randMinInt = bind::intConst(randNameMinInt);
+
+                  ExprVector args;
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(mk<LT>(curMinLE, curMinLT));
+                  args.push_back(randMinInt);
+                  args.push_back(curMin);
+                  Expr randIntApp = bind::fapp(randInt, args);
+                  randSanityExprs.push_back(mk<AND>(mk<GEQ>(randIntApp, randMinInt), 
+                    mk<ITE>(mk<LT>(curMinLE, curMinLT), mk<LEQ>(randIntApp, curMin), mk<LT>(randIntApp, curMin))));
+                  return randIntApp;
+              } else {
+                  ExprVector realArgs;          
+                  Expr randNameReal = mkTerm ("_aeval_tmp_rand_real_" + ind, efac);
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  Expr randReal = bind::fdecl(randNameReal, realArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::realTy (efac));
+                  Expr randNameMinReal = mkTerm("_aeval_tmp_unbounded_min_" + minind, efac);
+                  Expr randMinReal = bind::realConst(randNameMinReal);
+
+                  ExprVector args;
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(mk<LT>(curMinLE, curMinLT));
+                  args.push_back(randMinReal);
+                  args.push_back(curMin);
+                  Expr randRealApp = bind::fapp(randReal, args);
+                  randSanityExprs.push_back(mk<AND>(mk<GEQ>(randRealApp, randMinReal),
+                    mk<ITE>(mk<LT>(curMinLE, curMinLT), mk<LEQ>(randRealApp, curMin), mk<LT>(randRealApp, curMin))));
+                  return randRealApp;
+              }              
+            } else {
+              return minusEps(curMin, isInt, false);
+            }
           }
 
           if (curMinLT == NULL && curMinLE == NULL && curMaxGT != NULL && curMaxGE != NULL)
           {
-            return plusEps(curMax, isInt, false);
+            if (nondet) {
+            string ind = lexical_cast<string> (fresh_var_ind++);
+            string maxind = lexical_cast<string> (fresh_var_ind++);
+              if (isInt) {
+                  ExprVector intArgs;          
+                  Expr randNameInt = mkTerm ("_aeval_tmp_rand_int_" + ind, efac);
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  Expr randInt = bind::fdecl(randNameInt, intArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::intTy (efac));
+                  Expr randNameMaxInt = mkTerm("_aeval_tmp_unbounded_max_" + maxind, efac);
+                  Expr randMaxInt = bind::intConst(randNameMaxInt);
+
+                  ExprVector args;
+                  args.push_back(mk<GT>(curMaxGE, curMaxGT));
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(curMax);
+                  args.push_back(randMaxInt);
+                  Expr randIntApp = bind::fapp(randInt, args);
+                  randSanityExprs.push_back(mk<AND>(
+                    mk<ITE>(mk<GT>(curMaxGE, curMaxGT), mk<GEQ>(randIntApp, curMax), mk<GT>(randIntApp, curMax)),
+                    mk<LEQ>(randIntApp, randMaxInt)));
+                  return randIntApp;
+              } else {
+                  ExprVector realArgs;          
+                  Expr randNameReal = mkTerm ("_aeval_tmp_rand_real_" + ind, efac);
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  Expr randReal = bind::fdecl(randNameReal, realArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::realTy (efac));
+                  Expr randNameMaxReal = mkTerm("_aeval_tmp_unbounded_max_" + maxind, efac);
+                  Expr randMaxReal = bind::realConst(randNameMaxReal);
+
+                  ExprVector args;
+                  args.push_back(mk<GT>(curMaxGE, curMaxGT));
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(randMaxReal);
+                  args.push_back(curMax);
+                  Expr randRealApp = bind::fapp(randReal, args);
+                  randSanityExprs.push_back(mk<AND>(
+                    mk<ITE>(mk<GT>(curMaxGE, curMaxGT), mk<GEQ>(randRealApp, curMax), mk<GT>(randRealApp, curMax)),
+                    mk<LEQ>(randRealApp, randMaxReal)));
+                  return randRealApp;
+              }
+            } else {
+              return plusEps(curMax, isInt, false);
+            }
           }
 
           if (curMinLT != NULL && curMinLE == NULL && curMaxGT != NULL && curMaxGE == NULL)
@@ -1003,42 +1521,42 @@ namespace ufo
           	if (nondet) {
 		        string ind = lexical_cast<string> (fresh_var_ind++);
 
-		        if (isInt) {
-			        ExprVector intArgs;          
-			        Expr randNameInt = mkTerm ("_aeval_tmp_rand_int_" + ind, efac); 
-			        intArgs.push_back(sort::boolTy (efac));
-			        intArgs.push_back(sort::boolTy (efac));
-			        intArgs.push_back(sort::intTy (efac));
-			        intArgs.push_back(sort::intTy (efac));
-			        intArgs.push_back(sort::intTy (efac));
-			        Expr randInt = bind::fdecl(randNameInt, intArgs);
+  		        if (isInt) {
+    			        ExprVector intArgs;          
+    			        Expr randNameInt = mkTerm ("_aeval_tmp_rand_int_" + ind, efac); 
+    			        intArgs.push_back(sort::boolTy (efac));
+    			        intArgs.push_back(sort::boolTy (efac));
+    			        intArgs.push_back(sort::intTy (efac));
+    			        intArgs.push_back(sort::intTy (efac));
+    			        intArgs.push_back(sort::intTy (efac));
+    			        Expr randInt = bind::fdecl(randNameInt, intArgs);
 
-		      		ExprVector args;
-		  			args.push_back(mk<FALSE>(efac));
-		  			args.push_back(mk<FALSE>(efac));
-						  args.push_back(curMaxGT);
-			      	args.push_back(curMinLT);
-			  		  Expr randIntApp = bind::fapp(randInt, args);
-			      	randSanityExprs.push_back(mk<AND>(mk<GT>(randIntApp, curMaxGT), mk<LT>(randIntApp, curMinLT)));
-		  	  		return randIntApp;
-		      	} else {
-			        ExprVector realArgs;          
-			        Expr randNameReal = mkTerm ("_aeval_tmp_rand_real_" + ind, efac);
-			        realArgs.push_back(sort::boolTy (efac));
-			        realArgs.push_back(sort::boolTy (efac));
-			        realArgs.push_back(sort::realTy (efac));
-			        realArgs.push_back(sort::realTy (efac));
-			        realArgs.push_back(sort::realTy (efac));
-			        Expr randReal = bind::fdecl(randNameReal, realArgs);
+    		      		ExprVector args;
+    		  			  args.push_back(mk<FALSE>(efac));
+    		  		  	args.push_back(mk<FALSE>(efac));
+    						  args.push_back(curMaxGT);
+    			      	args.push_back(curMinLT);
+    			  		  Expr randIntApp = bind::fapp(randInt, args);
+    			      	randSanityExprs.push_back(mk<AND>(mk<GT>(randIntApp, curMaxGT), mk<LT>(randIntApp, curMinLT)));
+    		  	  		return randIntApp;
+  		      	} else {
+    			        ExprVector realArgs;          
+    			        Expr randNameReal = mkTerm ("_aeval_tmp_rand_real_" + ind, efac);
+    			        realArgs.push_back(sort::boolTy (efac));
+    			        realArgs.push_back(sort::boolTy (efac));
+    			        realArgs.push_back(sort::realTy (efac));
+    			        realArgs.push_back(sort::realTy (efac));
+    			        realArgs.push_back(sort::realTy (efac));
+    			        Expr randReal = bind::fdecl(randNameReal, realArgs);
 
-		      		ExprVector args;
-		  			args.push_back(mk<FALSE>(efac));
-		  			args.push_back(mk<FALSE>(efac));
-						args.push_back(curMaxGT);
-			      	args.push_back(curMinLT);
-			  		Expr randRealApp = bind::fapp(randReal, args);
-			      	randSanityExprs.push_back(mk<AND>(mk<GT>(randRealApp, curMaxGT), mk<LT>(randRealApp, curMinLT)));
-		  	  		return randRealApp;
+    		      		ExprVector args;
+                  args.push_back(mk<FALSE>(efac));
+    		  			  args.push_back(mk<FALSE>(efac));
+    						  args.push_back(curMaxGT);
+    			      	args.push_back(curMinLT);
+    			  		  Expr randRealApp = bind::fapp(randReal, args);
+    			      	randSanityExprs.push_back(mk<AND>(mk<GT>(randRealApp, curMaxGT), mk<LT>(randRealApp, curMinLT)));
+  		  	  		return randRealApp;
 		      	}
 	      	} else {
 	      		if (isInt)
@@ -1114,12 +1632,12 @@ namespace ufo
 		            Expr randInt = bind::fdecl(randNameInt, intArgs);
 
 		            ExprVector args;
-	      			args.push_back(mk<FALSE>(efac));
-	      			args.push_back(mk<TRUE>(efac));
-	  				args.push_back(curMaxGT);
-			      	args.push_back(curMinLE);
-			  		Expr randIntApp = bind::fapp(randInt, args);
-			      	randSanityExprs.push_back(mk<AND>(mk<GT>(randIntApp, curMaxGT), mk<LEQ>(randIntApp, curMinLE)));
+	      			  args.push_back(mk<FALSE>(efac));
+	      			  args.push_back(mk<TRUE>(efac));
+	  				    args.push_back(curMaxGT);
+			      	  args.push_back(curMinLE);
+			  		    Expr randIntApp = bind::fapp(randInt, args);
+			      	  randSanityExprs.push_back(mk<AND>(mk<GT>(randIntApp, curMaxGT), mk<LEQ>(randIntApp, curMinLE)));
 		  	  		return randIntApp;
 	          	} else { 
 	            	ExprVector realArgs;
@@ -1468,7 +1986,55 @@ namespace ufo
           if (curMinLT == NULL && curMinLE != NULL)
           {
             if (nondet) {
-              return minusEps(curMinLE, isInt, true);
+              string ind = lexical_cast<string> (fresh_var_ind++);
+              string minind = lexical_cast<string> (fresh_var_ind++);
+              if (isInt) {
+                  ExprVector intArgs;          
+                  Expr randNameInt = mkTerm ("_aeval_tmp_rand_int_" + ind, efac);
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  Expr randInt = bind::fdecl(randNameInt, intArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::intTy (efac));
+                  Expr randNameMinInt = mkTerm("_aeval_tmp_unbounded_min_" + minind, efac);
+                  Expr randMinInt = bind::intConst(randNameMinInt);
+
+                  ExprVector args;
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(randMinInt);
+                  args.push_back(curMinLE);
+                  Expr randIntApp = bind::fapp(randInt, args);
+                  randSanityExprs.push_back(mk<AND>(mk<GEQ>(randIntApp, randMinInt), mk<LEQ>(randIntApp, curMinLE)));
+                  return randIntApp;
+              } else {
+                  ExprVector realArgs;          
+                  Expr randNameReal = mkTerm ("_aeval_tmp_rand_real_" + ind, efac);
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  Expr randReal = bind::fdecl(randNameReal, realArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::realTy (efac));
+                  Expr randNameMinReal = mkTerm("_aeval_tmp_unbounded_min_" + minind, efac);
+                  Expr randMinReal = bind::realConst(randNameMinReal);
+
+                  ExprVector args;
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(randMinReal);
+                  args.push_back(curMinLE);
+                  Expr randRealApp = bind::fapp(randReal, args);
+                  randSanityExprs.push_back(mk<AND>(mk<GEQ>(randRealApp, randMinReal), mk<LEQ>(randRealApp, curMinLE)));
+                  return randRealApp;
+              }
             } else {
               return curMinLE;
             }
@@ -1477,7 +2043,55 @@ namespace ufo
           if (curMaxGT == NULL && curMaxGE != NULL)
           {
             if (nondet) {
-              return plusEps(curMaxGE, isInt, true);
+              string ind = lexical_cast<string> (fresh_var_ind++);
+              string maxind = lexical_cast<string> (fresh_var_ind++);
+                if (isInt) {
+                    ExprVector intArgs;          
+                    Expr randNameInt = mkTerm ("_aeval_tmp_rand_int_" + ind, efac);
+                    intArgs.push_back(sort::boolTy (efac));
+                    intArgs.push_back(sort::boolTy (efac));
+                    intArgs.push_back(sort::intTy (efac));
+                    intArgs.push_back(sort::intTy (efac));
+                    intArgs.push_back(sort::intTy (efac));
+                    Expr randInt = bind::fdecl(randNameInt, intArgs);
+
+                    ExprVector unboundedArgs;
+                    unboundedArgs.push_back(sort::intTy (efac));
+                    Expr randNameMaxInt = mkTerm("_aeval_tmp_unbounded_max_" + maxind, efac);
+                    Expr randMaxInt = bind::intConst(randNameMaxInt);
+
+                    ExprVector args;
+                    args.push_back(mk<TRUE>(efac));
+                    args.push_back(mk<TRUE>(efac));
+                    args.push_back(curMaxGE);
+                    args.push_back(randMaxInt);
+                    Expr randIntApp = bind::fapp(randInt, args);
+                    randSanityExprs.push_back(mk<AND>(mk<GEQ>(randIntApp, curMaxGE), mk<LEQ>(randIntApp, randMaxInt)));
+                    return randIntApp;
+                } else {
+                    ExprVector realArgs;          
+                    Expr randNameReal = mkTerm ("_aeval_tmp_rand_real_" + ind, efac);
+                    realArgs.push_back(sort::boolTy (efac));
+                    realArgs.push_back(sort::boolTy (efac));
+                    realArgs.push_back(sort::realTy (efac));
+                    realArgs.push_back(sort::realTy (efac));
+                    realArgs.push_back(sort::realTy (efac));
+                    Expr randReal = bind::fdecl(randNameReal, realArgs);
+
+                    ExprVector unboundedArgs;
+                    unboundedArgs.push_back(sort::realTy (efac));
+                    Expr randNameMaxReal = mkTerm("_aeval_tmp_unbounded_max_" + maxind, efac);
+                    Expr randMaxReal = bind::realConst(randNameMaxReal);
+
+                    ExprVector args;
+                    args.push_back(mk<TRUE>(efac));
+                    args.push_back(mk<TRUE>(efac));
+                    args.push_back(curMaxGE);
+                    args.push_back(randMaxReal);
+                    Expr randRealApp = bind::fapp(randReal, args);
+                    randSanityExprs.push_back(mk<AND>(mk<GEQ>(randRealApp, curMaxGE), mk<LEQ>(randRealApp, randMaxReal)));
+                    return randRealApp;
+              }
             } else {
               return curMaxGE;
             }
@@ -1494,37 +2108,468 @@ namespace ufo
         GetSymbolicMax(conjNEQ, tmpMax, isInt);
         if (curMinLE == NULL && curMinLT == NULL && curMaxGE == NULL && curMaxGT == NULL)
         {
-          return plusEps(tmpMax, isInt, false);
+          if (nondet) {
+            string ind = lexical_cast<string> (fresh_var_ind++);
+            string minind = lexical_cast<string> (fresh_var_ind++);
+            string maxind = lexical_cast<string> (fresh_var_ind++);
+              if (isInt) {
+                  ExprVector intArgs;          
+                  Expr randNameInt = mkTerm ("_aeval_tmp_randneq_int_" + ind, efac);
+                  for (auto &a : conjNEQ) intArgs.push_back(sort::intTy (efac)); 
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  Expr randInt = bind::fdecl(randNameInt, intArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::intTy (efac));
+                  Expr randNameMinInt = mkTerm("_aeval_tmp_unbounded_min_" + minind, efac);
+                  Expr randNameMaxInt = mkTerm("_aeval_tmp_unbounded_max_" + maxind, efac);
+                  Expr randMinInt = bind::intConst(randNameMinInt);
+                  Expr randMaxInt = bind::intConst(randNameMaxInt);
+
+                  ExprVector args;
+                  for (auto &a : conjNEQ) {
+                    args.push_back(a);
+                  }
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(randMinInt);
+                  args.push_back(randMaxInt);
+                  Expr randIntApp = bind::fapp(randInt, args);
+                  randSanityExprs.push_back(mk<AND>(mk<GEQ>(randIntApp, randMinInt), mk<LEQ>(randIntApp, randMaxInt)));
+                  return randIntApp;
+              } else {
+                  ExprVector realArgs;          
+                  Expr randNameReal = mkTerm ("_aeval_tmp_randneq_real_" + ind, efac);
+                  for (auto &a : conjNEQ) realArgs.push_back(sort::realTy (efac)); 
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  Expr randReal = bind::fdecl(randNameReal, realArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::realTy (efac));
+                  Expr randNameMinReal = mkTerm("_aeval_tmp_unbounded_min_" + minind, efac);
+                  Expr randNameMaxReal = mkTerm("_aeval_tmp_unbounded_max_" + maxind, efac);
+                  Expr randMinReal = bind::realConst(randNameMinReal);
+                  Expr randMaxReal = bind::realConst(randNameMaxReal);
+                  
+                  ExprVector args;
+                  for (auto &a : conjNEQ) {
+                    args.push_back(a);
+                  }
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(randMinReal);
+                  args.push_back(randMaxReal);
+                  Expr randRealApp = bind::fapp(randReal, args);
+                  randSanityExprs.push_back(mk<AND>(mk<GEQ>(randRealApp, randMinReal), mk<LEQ>(randRealApp, randMaxReal)));
+                  return randRealApp;
+                }
+            } else {
+                return plusEps(tmpMax, isInt, false);
+            }
         }
 
         if (curMinLE != NULL && curMinLT == NULL && curMaxGE == NULL && curMaxGT == NULL)
         {
-          return minusEps(mk<ITE>(mk<LT>(curMinLE, tmpMin), curMinLE, tmpMin), isInt, false);
+          if (nondet) {
+            string ind = lexical_cast<string> (fresh_var_ind++);
+            string minind = lexical_cast<string> (fresh_var_ind++);
+              if (isInt) {
+                  ExprVector intArgs;          
+                  Expr randNameInt = mkTerm ("_aeval_tmp_randneq_int_" + ind, efac);
+                  for (auto &a : conjNEQ) intArgs.push_back(sort::intTy (efac)); 
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  Expr randInt = bind::fdecl(randNameInt, intArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::intTy (efac));
+                  Expr randNameMinInt = mkTerm("_aeval_tmp_unbounded_min_" + minind, efac);
+                  Expr randMinInt = bind::intConst(randNameMinInt);
+
+                  ExprVector args;
+                  for (auto &a : conjNEQ) {
+                    args.push_back(a);
+                  }
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(randMinInt);
+                  args.push_back(curMinLE);
+                  Expr randIntApp = bind::fapp(randInt, args);
+                  randSanityExprs.push_back(mk<AND>(mk<GEQ>(randIntApp, randMinInt), mk<LEQ>(randIntApp, curMinLE)));
+                  return randIntApp;
+              } else {
+                  ExprVector realArgs;          
+                  Expr randNameReal = mkTerm ("_aeval_tmp_randneq_real_" + ind, efac);
+                  for (auto &a : conjNEQ) realArgs.push_back(sort::realTy (efac)); 
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  Expr randReal = bind::fdecl(randNameReal, realArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::realTy (efac));
+                  Expr randNameMinReal = mkTerm("_aeval_tmp_unbounded_min_" + minind, efac);
+                  Expr randMinReal = bind::realConst(randNameMinReal);
+
+                  ExprVector args;
+                  for (auto &a : conjNEQ) {
+                    args.push_back(a);
+                  }
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(randMinReal);
+                  args.push_back(curMinLE);
+                  Expr randRealApp = bind::fapp(randReal, args);
+                  randSanityExprs.push_back(mk<AND>(mk<GEQ>(randRealApp, randMinReal), mk<LEQ>(randRealApp, curMinLE)));
+                  return randRealApp;
+            }
+          } else {
+            return minusEps(mk<ITE>(mk<LT>(curMinLE, tmpMin), curMinLE, tmpMin), isInt, false);
+          }
         }
 
         if (curMinLE == NULL && curMinLT != NULL && curMaxGE == NULL && curMaxGT == NULL)
         {
-          return minusEps(mk<ITE>(mk<LT>(curMinLT, tmpMin), curMinLT, tmpMin), isInt, false);
+          if (nondet) {
+            string ind = lexical_cast<string> (fresh_var_ind++);
+            string minind = lexical_cast<string> (fresh_var_ind++);
+              if (isInt) {
+                  ExprVector intArgs;          
+                  Expr randNameInt = mkTerm ("_aeval_tmp_randneq_int_" + ind, efac);
+                  for (auto &a : conjNEQ) intArgs.push_back(sort::intTy (efac)); 
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  Expr randInt = bind::fdecl(randNameInt, intArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::intTy (efac));
+                  Expr randNameMinInt = mkTerm("_aeval_tmp_unbounded_min_" + minind, efac);
+                  Expr randMinInt = bind::intConst(randNameMinInt);
+
+                  ExprVector args;
+                  for (auto &a : conjNEQ) {
+                    args.push_back(a);
+                  }
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(mk<FALSE>(efac));
+                  args.push_back(randMinInt);
+                  args.push_back(curMinLT);
+                  Expr randIntApp = bind::fapp(randInt, args);
+                  randSanityExprs.push_back(mk<AND>(mk<GEQ>(randIntApp, randMinInt), mk<LT>(randIntApp, curMinLT)));
+                  return randIntApp;
+              } else {
+                  ExprVector realArgs;          
+                  Expr randNameReal = mkTerm ("_aeval_tmp_randneq_real_" + ind, efac);
+                  for (auto &a : conjNEQ) realArgs.push_back(sort::realTy (efac)); 
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  Expr randReal = bind::fdecl(randNameReal, realArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::realTy (efac));
+                  Expr randNameMinReal = mkTerm("_aeval_tmp_unbounded_min_" + minind, efac);
+                  Expr randMinReal = bind::realConst(randNameMinReal);
+
+                  ExprVector args;
+                  for (auto &a : conjNEQ) {
+                    args.push_back(a);
+                  }
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(mk<FALSE>(efac));
+                  args.push_back(randMinReal);
+                  args.push_back(curMinLT);
+                  Expr randRealApp = bind::fapp(randReal, args);
+                  randSanityExprs.push_back(mk<AND>(mk<GEQ>(randRealApp, randMinReal), mk<LT>(randRealApp, curMinLT)));
+                  return randRealApp;
+              }
+          } else {
+             return minusEps(mk<ITE>(mk<LT>(curMinLT, tmpMin), curMinLT, tmpMin), isInt, false);
+          }
         }
 
         if (curMinLE != NULL && curMinLT != NULL && curMaxGE == NULL && curMaxGT == NULL)
         {
-          return minusEps(mk<ITE>(mk<LT>(curMin, tmpMin), curMin, tmpMin), isInt, false);
+          if (nondet) {
+            string ind = lexical_cast<string> (fresh_var_ind++);
+            string minind = lexical_cast<string> (fresh_var_ind++);
+              if (isInt) {
+                  ExprVector intArgs;          
+                  Expr randNameInt = mkTerm ("_aeval_tmp_randneq_int_" + ind, efac);
+                  for (auto &a : conjNEQ) intArgs.push_back(sort::intTy (efac)); 
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  Expr randInt = bind::fdecl(randNameInt, intArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::intTy (efac));
+                  Expr randNameMinInt = mkTerm("_aeval_tmp_unbounded_min_" + minind, efac);
+                  Expr randMinInt = bind::intConst(randNameMinInt);
+
+                  ExprVector args;
+                  for (auto &a : conjNEQ) {
+                    args.push_back(a);
+                  }
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(mk<LT>(curMinLE, curMinLT));
+                  args.push_back(randMinInt);
+                  args.push_back(curMin);
+                  Expr randIntApp = bind::fapp(randInt, args);
+                  randSanityExprs.push_back(mk<AND>(mk<GEQ>(randIntApp, randMinInt), 
+                    mk<ITE>(mk<LT>(curMinLE, curMinLT), mk<LEQ>(randIntApp, curMin), mk<LT>(randIntApp, curMin))));
+                  return randIntApp;
+              } else {
+                  ExprVector realArgs;          
+                  Expr randNameReal = mkTerm ("_aeval_tmp_randneq_real_" + ind, efac);
+                  for (auto &a : conjNEQ) realArgs.push_back(sort::realTy (efac)); 
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  Expr randReal = bind::fdecl(randNameReal, realArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::realTy (efac));
+                  Expr randNameMinReal = mkTerm("_aeval_tmp_unbounded_min_" + minind, efac);
+                  Expr randMinReal = bind::realConst(randNameMinReal);
+
+                  ExprVector args;
+                  for (auto &a : conjNEQ) {
+                    args.push_back(a);
+                  }
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(mk<LT>(curMinLE, curMinLT));
+                  args.push_back(randMinReal);
+                  args.push_back(curMin);
+                  Expr randRealApp = bind::fapp(randReal, args);
+                  randSanityExprs.push_back(mk<AND>(mk<GEQ>(randRealApp, randMinReal),
+                    mk<ITE>(mk<LT>(curMinLE, curMinLT), mk<LEQ>(randRealApp, curMin), mk<LT>(randRealApp, curMin))));
+                  return randRealApp;
+            }
+          } else {
+              return minusEps(mk<ITE>(mk<LT>(curMin, tmpMin), curMin, tmpMin), isInt, false);
+          }
         }
 
         if (curMinLE == NULL && curMinLT == NULL && curMaxGE != NULL && curMaxGT == NULL)
         {
-          return plusEps(mk<ITE>(mk<GT>(curMaxGE, tmpMax), curMaxGE, tmpMax), isInt, false);
+          if (nondet) {
+            string ind = lexical_cast<string> (fresh_var_ind++);
+            string maxind = lexical_cast<string> (fresh_var_ind++);
+              if (isInt) {
+                  ExprVector intArgs;          
+                  Expr randNameInt = mkTerm ("_aeval_tmp_randneq_int_" + ind, efac);
+                  for (auto &a : conjNEQ) intArgs.push_back(sort::intTy (efac)); 
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  Expr randInt = bind::fdecl(randNameInt, intArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::intTy (efac));
+                  Expr randNameMaxInt = mkTerm("_aeval_tmp_unbounded_max_" + maxind, efac);
+                  Expr randMaxInt = bind::intConst(randNameMaxInt);
+
+                  ExprVector args;
+                  for (auto &a : conjNEQ) {
+                    args.push_back(a);
+                  }
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(curMaxGE);
+                  args.push_back(randMaxInt);
+                  Expr randIntApp = bind::fapp(randInt, args);
+                  randSanityExprs.push_back(mk<AND>(mk<GEQ>(randIntApp, curMaxGE), mk<LEQ>(randIntApp, randMaxInt)));
+                  return randIntApp;
+              } else {
+                  ExprVector realArgs;          
+                  Expr randNameReal = mkTerm ("_aeval_tmp_randneq_real_" + ind, efac);
+                  for (auto &a : conjNEQ) realArgs.push_back(sort::realTy (efac)); 
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  Expr randReal = bind::fdecl(randNameReal, realArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::realTy (efac));
+                  Expr randNameMaxReal = mkTerm("_aeval_tmp_unbounded_max_" + maxind, efac);
+                  Expr randMaxReal = bind::realConst(randNameMaxReal);
+
+                  ExprVector args;
+                  for (auto &a : conjNEQ) {
+                    args.push_back(a);
+                  }
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(curMaxGE);
+                  args.push_back(randMaxReal);
+                  Expr randRealApp = bind::fapp(randReal, args);
+                  randSanityExprs.push_back(mk<AND>(mk<GEQ>(randRealApp, curMaxGE), mk<LEQ>(randRealApp, randMaxReal)));
+                  return randRealApp;
+            }
+          } else {          
+            return plusEps(mk<ITE>(mk<GT>(curMaxGE, tmpMax), curMaxGE, tmpMax), isInt, false);
+          }
         }
 
         if (curMinLE == NULL && curMinLT == NULL && curMaxGE == NULL && curMaxGT != NULL)
         {
-          return plusEps(mk<ITE>(mk<GT>(curMaxGT, tmpMax), curMaxGT, tmpMax), isInt, false);
+          if (nondet) {
+            string ind = lexical_cast<string> (fresh_var_ind++);
+            string maxind = lexical_cast<string> (fresh_var_ind++);
+              if (isInt) {
+                  ExprVector intArgs;          
+                  Expr randNameInt = mkTerm ("_aeval_tmp_randneq_int_" + ind, efac);
+                  for (auto &a : conjNEQ) intArgs.push_back(sort::intTy (efac)); 
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  Expr randInt = bind::fdecl(randNameInt, intArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::intTy (efac));
+                  Expr randNameMaxInt = mkTerm("_aeval_tmp_unbounded_max_" + maxind, efac);
+                  Expr randMaxInt = bind::intConst(randNameMaxInt);
+
+                  ExprVector args;
+                  for (auto &a : conjNEQ) {
+                    args.push_back(a);
+                  }
+                  args.push_back(mk<FALSE>(efac));
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(curMaxGT);
+                  args.push_back(randMaxInt);
+                  Expr randIntApp = bind::fapp(randInt, args);
+                  randSanityExprs.push_back(mk<AND>(mk<GT>(randIntApp, curMaxGT), mk<LEQ>(randIntApp, randMaxInt)));
+                  return randIntApp;
+              } else {
+                  ExprVector realArgs;          
+                  Expr randNameReal = mkTerm ("_aeval_tmp_randneq_real_" + ind, efac);
+                  for (auto &a : conjNEQ) realArgs.push_back(sort::realTy (efac)); 
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  Expr randReal = bind::fdecl(randNameReal, realArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::realTy (efac));
+                  Expr randNameMaxReal = mkTerm("_aeval_tmp_unbounded_max_" + maxind, efac);
+                  Expr randMaxReal = bind::realConst(randNameMaxReal);
+
+                  ExprVector args;
+                  for (auto &a : conjNEQ) {
+                    args.push_back(a);
+                  }
+                  args.push_back(mk<FALSE>(efac));
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(curMaxGT);
+                  args.push_back(randMaxReal);
+                  Expr randRealApp = bind::fapp(randReal, args);
+                  randSanityExprs.push_back(mk<AND>(mk<GEQ>(randRealApp, curMaxGT), mk<LEQ>(randRealApp, randMaxReal)));
+                  return randRealApp;
+            }
+          } else {          
+            return plusEps(mk<ITE>(mk<GT>(curMaxGT, tmpMax), curMaxGT, tmpMax), isInt, false);
+          }
         }
 
         if (curMinLE == NULL && curMinLT == NULL && curMaxGE != NULL && curMaxGT != NULL)
         {
-          return plusEps(mk<ITE>(mk<GT>(curMax, tmpMax), curMax, tmpMax), isInt, false);
+          if (nondet) {
+            string ind = lexical_cast<string> (fresh_var_ind++);
+            string maxind = lexical_cast<string> (fresh_var_ind++);
+              if (isInt) {
+                  ExprVector intArgs;          
+                  Expr randNameInt = mkTerm ("_aeval_tmp_randneq_int_" + ind, efac);
+                  for (auto &a : conjNEQ) intArgs.push_back(sort::intTy (efac)); 
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::boolTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  intArgs.push_back(sort::intTy (efac));
+                  Expr randInt = bind::fdecl(randNameInt, intArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::intTy (efac));
+                  Expr randNameMaxInt = mkTerm("_aeval_tmp_unbounded_max_" + maxind, efac);
+                  Expr randMaxInt = bind::intConst(randNameMaxInt);
+
+                  ExprVector args;
+                  for (auto &a : conjNEQ) {
+                    args.push_back(a);
+                  }
+                  args.push_back(mk<GT>(curMaxGE, curMaxGT));
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(curMax);
+                  args.push_back(randMaxInt);
+                  Expr randIntApp = bind::fapp(randInt, args);
+                  randSanityExprs.push_back(mk<AND>(
+                    mk<ITE>(mk<GT>(curMaxGE, curMaxGT), mk<GEQ>(randIntApp, curMax), mk<GT>(randIntApp, curMax)),
+                    mk<LEQ>(randIntApp, randMaxInt)));
+                  return randIntApp;
+              } else {
+                  ExprVector realArgs;          
+                  Expr randNameReal = mkTerm ("_aeval_tmp_randneq_real_" + ind, efac);
+                  for (auto &a : conjNEQ) realArgs.push_back(sort::realTy (efac)); 
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::boolTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  realArgs.push_back(sort::realTy (efac));
+                  Expr randReal = bind::fdecl(randNameReal, realArgs);
+
+                  ExprVector unboundedArgs;
+                  unboundedArgs.push_back(sort::realTy (efac));
+                  Expr randNameMaxReal = mkTerm("_aeval_tmp_unbounded_max_" + maxind, efac);
+                  Expr randMaxReal = bind::realConst(randNameMaxReal);
+
+                  ExprVector args;
+                  for (auto &a : conjNEQ) {
+                    args.push_back(a);
+                  }
+                  args.push_back(mk<GT>(curMaxGE, curMaxGT));
+                  args.push_back(mk<TRUE>(efac));
+                  args.push_back(randMaxReal);
+                  args.push_back(curMax);
+                  Expr randRealApp = bind::fapp(randReal, args);
+                  randSanityExprs.push_back(mk<AND>(
+                    mk<ITE>(mk<GT>(curMaxGE, curMaxGT), mk<GEQ>(randRealApp, curMax), mk<GT>(randRealApp, curMax)),
+                    mk<LEQ>(randRealApp, randMaxReal)));
+                  return randRealApp;
+            }
+          } else {          
+            return plusEps(mk<ITE>(mk<GT>(curMax, tmpMax), curMax, tmpMax), isInt, false);
+          }
         }
 
         assert (curMinLE != NULL || curMinLT != NULL);
@@ -1769,15 +2814,23 @@ namespace ufo
             for (auto & a : skolMaps[i]) if (a.second != NULL) pre.insert(a.second);
             pre.insert(t);
             Expr assm = getCondDefinitionFormula(var, conjoin(pre, efac));
+
             if (assm != NULL)
             {
               skolMaps[i][var] = assm;
             }
             else if (someEvals[i][var] != NULL)
             {
-              skolMaps[i][var] = someEvals[i][var];
+              if (nondet) {
+                skolMaps[i][var] = mk<EQ>(var, getUnconstrainedAssignment(var));
+              } else {
+                skolMaps[i][var] = someEvals[i][var];
+              }
             }
-            else skolMaps[i][var] = mk<EQ>(var, getDefaultAssignment(var));
+            else {
+              skolMaps[i][var] = mk<EQ>(var, getDefaultAssignment(var));
+              // nondet ? mk<EQ>(var, getUnconstrainedAssignment(var)) : mk<EQ>(var, getDefaultAssignment(var));
+            }
           }
 
           if (compact) // small optim:
